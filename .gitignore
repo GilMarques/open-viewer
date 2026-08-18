@@ -67,4 +67,6 @@ testem.log
 
 # System files
 .DS_Store
+# Debug sample books (large binaries; regenerate via `npm run samples` if needed)
+/src/assets/sample/
 Thumbs.db
