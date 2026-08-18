@@ -9,12 +9,9 @@ import {
   IonLabel,
   IonList,
   IonNote,
-  IonSegment,
-  IonSegmentButton,
   IonSelect,
   IonSelectOption,
   IonToggle,
-  type SegmentChangeEventDetail,
 } from '@ionic/angular/standalone';
 
 import type {
@@ -82,25 +79,35 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
     IonLabel,
     IonList,
     IonNote,
-    IonSegment,
-    IonSegmentButton,
     IonSelect,
     IonSelectOption,
     IonToggle,
   ],
   template: `
     <ion-list lines="full" class="settings-list">
-      <ion-item>
-        <ion-label>Reading direction</ion-label>
+      <ion-item class="reading-direction-row">
+        <ion-note
+          slot="start"
+          class="direction-label"
+          [class.is-active]="!isRtl()"
+          aria-hidden="true"
+        >
+          Left → right
+        </ion-note>
+        <ion-label class="ion-text-nowrap">Reading direction</ion-label>
         <ion-toggle
           [checked]="isRtl()"
           (ionChange)="onReadingDirectionChange($event)"
           aria-label="Toggle reading direction"
         ></ion-toggle>
-      </ion-item>
-      <ion-item>
-        <ion-label>Direction</ion-label>
-        <ion-note slot="end">{{ isRtl() ? 'Right → left' : 'Left → right' }}</ion-note>
+        <ion-note
+          slot="end"
+          class="direction-label"
+          [class.is-active]="isRtl()"
+          aria-hidden="true"
+        >
+          Right → left
+        </ion-note>
       </ion-item>
 
       <ion-item>
@@ -133,24 +140,30 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
 
       <ion-item>
         <ion-label>Interface theme</ion-label>
-        <ion-segment [value]="theme()" (ionChange)="onThemeChange($event)">
+        <ion-select
+          [value]="theme()"
+          (ionChange)="onThemeChange($event)"
+          interface="popover"
+          aria-label="Interface theme"
+        >
           @for (opt of themes; track opt.value) {
-            <ion-segment-button [value]="opt.value">
-              <ion-label>{{ opt.label }}</ion-label>
-            </ion-segment-button>
+            <ion-select-option [value]="opt.value">{{ opt.label }}</ion-select-option>
           }
-        </ion-segment>
+        </ion-select>
       </ion-item>
 
       <ion-item>
         <ion-label>Viewer mode</ion-label>
-        <ion-segment [value]="viewerMode()" (ionChange)="onViewerModeChange($event)">
+        <ion-select
+          [value]="viewerMode()"
+          (ionChange)="onViewerModeChange($event)"
+          interface="popover"
+          aria-label="Viewer mode"
+        >
           @for (opt of viewerModes; track opt.value) {
-            <ion-segment-button [value]="opt.value">
-              <ion-label>{{ opt.label }}</ion-label>
-            </ion-segment-button>
+            <ion-select-option [value]="opt.value">{{ opt.label }}</ion-select-option>
           }
-        </ion-segment>
+        </ion-select>
       </ion-item>
 
       <ion-item>
@@ -173,8 +186,19 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
       .settings-list {
         padding-top: 8px;
       }
-      ion-item ion-segment {
-        max-width: 240px;
+      .reading-direction-row {
+        --inner-padding-end: 0;
+      }
+      .direction-label {
+        font-size: 12px;
+        opacity: 0.45;
+        transition: opacity 120ms ease;
+        max-width: 96px;
+      }
+      .direction-label.is-active {
+        opacity: 1;
+        font-weight: 600;
+        color: var(--ion-color-primary);
       }
     `,
   ],
@@ -208,12 +232,16 @@ export class DisplaySettingsComponent {
     if (event.detail.value !== undefined) this.settings.setPageLayout(event.detail.value);
   }
 
-  public onThemeChange(event: CustomEvent<SegmentChangeEventDetail>): void {
+  /**
+   * Theme + viewer mode are now popovers (`ion-select`), so the event
+   * shape is `{ value: T | undefined }` — same as the other dropdowns.
+   */
+  public onThemeChange(event: CustomEvent<{ value: InterfaceTheme | undefined }>): void {
     const v = event.detail.value;
     if (v === 'auto' || v === 'light' || v === 'dark') this.settings.setInterfaceTheme(v);
   }
 
-  public onViewerModeChange(event: CustomEvent<SegmentChangeEventDetail>): void {
+  public onViewerModeChange(event: CustomEvent<{ value: ViewerMode | undefined }>): void {
     const v = event.detail.value;
     if (v === 'paged' || v === 'vertical-scroll' || v === 'horizontal-scroll') {
       this.settings.setViewerMode(v);
