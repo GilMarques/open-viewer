@@ -1,7 +1,29 @@
 <ion-content [scrollY]="false">
-  <div class="stage" [style.filter]="canvasFilter()" [style.image-rendering]="imageRendering()">
+  <div
+    #stage
+    class="stage"
+    [style.filter]="canvasFilter()"
+    [style.image-rendering]="imageRendering()"
+    (pointerdown)="onStagePointerDown($event)"
+    (pointermove)="onStagePointerMove($event)"
+    (pointerup)="onStagePointerUp()"
+    (pointercancel)="onStagePointerUp()"
+  >
     <ov-book-spread [book]="openBook()" />
   </div>
+
+  <ov-magnifier
+    [active]="magnifierActive()"
+    [pageUrl]="currentPageUrl()"
+    [pointerX]="pointerX()"
+    [pointerY]="pointerY()"
+    [hostRect]="hostRect()"
+    [viewportWidth]="viewportWidth()"
+    [viewportHeight]="viewportHeight()"
+    [naturalWidth]="naturalSize()?.width ?? 0"
+    [naturalHeight]="naturalSize()?.height ?? 0"
+    [zoom]="magnifierZoom()"
+  />
 
   <button
     type="button"

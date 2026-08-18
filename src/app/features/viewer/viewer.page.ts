@@ -1,11 +1,13 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   HostListener,
   computed,
   effect,
   inject,
   signal,
+  viewChild,
 } from '@angular/core';
 import { IonContent, IonIcon } from '@ionic/angular/standalone';
 
@@ -15,6 +17,8 @@ import { SettingsService } from '../../core/services/settings.service';
 import { BookstoreService } from '../../core/services/bookstore.service';
 import { BookSpreadComponent } from './book-spread.component';
 import { QuickActionsModalComponent } from './quick-actions-modal.component';
+import { MagnifierComponent } from './magnifier.component';
+
 /**
  * v1 Viewer: headerless, full-bleed book spread with a small, transparent,
  * centered-top floating button that opens a tabbed quick-actions modal.
@@ -33,12 +37,18 @@ import { QuickActionsModalComponent } from './quick-actions-modal.component';
  *  - Desktop wheel zoom: when zoom > 1 the curl gesture is auto-disabled
  *    (BookFlipService.setFlippingEnabled(false)), preventing the user
  *    from grabbing a corner that's off-screen.
+ *
+ * Magnifier:
+ *  - Pointerdown on .stage shows the loupe at the opposite screen corner.
+ *  - The loupe samples the current page's source image (not the rendered
+ *    canvas), so it stays correct through page-flip's transforms.
+ *  - Magnification factor is read live from settings (Preferences page).
  */
 @Component({
   selector: 'ov-viewer',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IonContent, IonIcon, BookSpreadComponent, QuickActionsModalComponent],
+  imports: [IonContent, IonIcon, BookSpreadComponent, QuickActionsModalComponent, MagnifierComponent],
   templateUrl: './viewer.page.html',
   styleUrls: ['./viewer.page.scss'],
   host: {
@@ -78,6 +88,41 @@ export class ViewerPage {
     return `${s.currentIndex + 1} / ${s.book.pages.length}`;
   });
 
+  // ──────────── Magnifier state ────────────
+
+  /** Reference to the stage element (.stage) for rect queries. */
+  private readonly stageRef = viewChild<ElementRef<HTMLDivElement>>('stage');
+
+  /** Pointer currently down on the stage? */
+  private readonly _magnifierActive = signal(false);
+  public readonly magnifierActive = this._magnifierActive.asReadonly();
+
+  /** Pointer X/Y in viewport coords. */
+  public readonly pointerX = signal(0);
+  public readonly pointerY = signal(0);
+
+  /** Snapshot of the stage's viewport-relative rect. Updated on activation. */
+  private readonly _hostRect = signal<DOMRect | null>(null);
+  public readonly hostRect = this._hostRect.asReadonly();
+
+  /** Viewport size. */
+  private readonly _viewportWidth = signal(0);
+  private readonly _viewportHeight = signal(0);
+  public readonly viewportWidth = this._viewportWidth.asReadonly();
+  public readonly viewportHeight = this._viewportHeight.asReadonly();
+
+  /** URL of the current page image. */
+  public readonly currentPageUrl = computed<string | null>(() => {
+    const page = this.bookstore.currentPage();
+    return page === null ? null : page.url;
+  });
+
+  /** Magnification factor (live from Preferences). */
+  public readonly magnifierZoom = computed(() => this.settings.settings().display.magnifierZoom);
+
+  /** Natural pixel size of the current page image. */
+  public readonly naturalSize = signal<{ width: number; height: number } | null>(null);
+
   constructor() {
     // v1: open the sample book on first entry. Remove once Bookshelf
     // can hand us a real book via routing.
@@ -85,6 +130,25 @@ export class ViewerPage {
       if (this.bookstore.state().book === null) {
         this.bookstore.openBook(buildKingdomSample());
       }
+    });
+
+    // Preload the current page image to learn its natural dimensions.
+    // Recomputed whenever the page URL changes. The image is held in
+    // memory only — we don't render it, just probe its size.
+    effect(() => {
+      const url = this.currentPageUrl();
+      if (url === null) {
+        this.naturalSize.set(null);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        this.naturalSize.set({ width: img.naturalWidth, height: img.naturalHeight });
+      };
+      img.onerror = () => {
+        this.naturalSize.set(null);
+      };
+      img.src = url;
     });
   }
 
@@ -110,6 +174,54 @@ export class ViewerPage {
     // Negative deltaY = zoom in (wheel rolled up). Map to multiplicative factor.
     const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
     this.bookstore.setZoom(factor);
+  }
+
+  // ──────────── Magnifier pointer handlers ────────────
+
+  public onStagePointerDown(event: PointerEvent): void {
+    // Only main button (mouse left, single-finger touch, pen).
+    if (event.button !== 0) return;
+    const stage = this.stageRef()?.nativeElement;
+    if (stage === undefined) return;
+    const rect = stage.getBoundingClientRect();
+    this._hostRect.set(rect);
+    this._viewportWidth.set(window.innerWidth);
+    this._viewportHeight.set(window.innerHeight);
+    this.pointerX.set(event.clientX);
+    this.pointerY.set(event.clientY);
+    this._magnifierActive.set(true);
+    // Capture the pointer so we keep getting move/up events even if the
+    // user drags off the stage. releasePointerCapture fires automatically
+    // on pointerup / pointercancel.
+    try {
+      (event.target as Element | null)?.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Some targets (e.g. canvas) reject capture. Best-effort.
+    }
+  }
+
+  public onStagePointerMove(event: PointerEvent): void {
+    if (!this._magnifierActive()) return;
+    this.pointerX.set(event.clientX);
+    this.pointerY.set(event.clientY);
+  }
+
+  public onStagePointerUp(): void {
+    this._magnifierActive.set(false);
+  }
+
+  /**
+   * Cancel the magnifier on window blur (alt-tab) or visibility change
+   * so it doesn't get stuck visible after the user leaves.
+   */
+  @HostListener('window:blur')
+  public onWindowBlur(): void {
+    this._magnifierActive.set(false);
+  }
+
+  @HostListener('document:visibilitychange')
+  public onVisibilityChange(): void {
+    if (document.hidden) this._magnifierActive.set(false);
   }
 }
 

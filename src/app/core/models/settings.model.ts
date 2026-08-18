@@ -82,6 +82,9 @@ export interface DisplaySettings {
   readonly viewerMode: ViewerMode;
   readonly pageTransition: PageTransition;
   readonly zoom: ZoomMode;
+  /** Magnifier loupe zoom factor. 1 = no magnification. Default 2.5.
+   *  Edited from the Preferences page; the viewer reads it live. */
+  readonly magnifierZoom: number;
 }
 
 export interface FilterSettings {
@@ -112,6 +115,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     viewerMode: 'paged',
     pageTransition: 'none',
     zoom: 'fit-screen',
+    magnifierZoom: 2.5,
   },
   filters: {
     brightness: { enabled: false, value: 100 },
@@ -142,3 +146,10 @@ export const FILTER_BOUNDS = {
   Exclude<keyof FilterSettings, 'imageSmooth'>,
   { min: number; max: number; step: number }
 >;
+
+/** Bounds for the magnifier zoom slider in Preferences. */
+export const MAGNIFIER_BOUNDS = {
+  min: 1.5,
+  max: 6,
+  step: 0.5,
+} as const;

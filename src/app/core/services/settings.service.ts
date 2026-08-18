@@ -3,6 +3,7 @@ import { Injectable, effect, signal } from '@angular/core';
 import {
   DEFAULT_SETTINGS,
   FILTER_BOUNDS,
+  MAGNIFIER_BOUNDS,
   type AppSettings,
   type DisplaySettings,
   type FilterMethod,
@@ -71,6 +72,14 @@ export class SettingsService {
 
   public setZoom(value: ZoomMode): void {
     this._settings.update((s) => ({ ...s, display: { ...s.display, zoom: value } }));
+  }
+
+  public setMagnifierZoom(value: number): void {
+    const clamped = Math.min(
+      MAGNIFIER_BOUNDS.max,
+      Math.max(MAGNIFIER_BOUNDS.min, value),
+    );
+    this._settings.update((s) => ({ ...s, display: { ...s.display, magnifierZoom: clamped } }));
   }
 
   // ──────────────────────── Filter setters ────────────────────────
@@ -148,6 +157,7 @@ export class SettingsService {
       viewerMode: this.pickEnum(d['viewerMode'], ['paged', 'vertical-scroll', 'horizontal-scroll'], fallback.display.viewerMode),
       pageTransition: this.pickEnum(d['pageTransition'], ['none', 'slide-horizontal', 'slide-vertical', 'page-curl'], fallback.display.pageTransition),
       zoom: this.pickEnum(d['zoom'], ['actual-size', 'fit-screen', 'fit-width', 'fit-height', 'fixed-size', 'stretch-to-fill', 'cover'], fallback.display.zoom),
+      magnifierZoom: this.pickNumber(d['magnifierZoom'], MAGNIFIER_BOUNDS.min, MAGNIFIER_BOUNDS.max, fallback.display.magnifierZoom),
     };
 
     const f = (i.filters ?? {}) as Record<string, unknown>;
@@ -175,6 +185,11 @@ export class SettingsService {
     return typeof raw === 'string' && (allowed as readonly string[]).includes(raw)
       ? (raw as T)
       : fallback;
+  }
+
+  private pickNumber(raw: unknown, min: number, max: number, fallback: number): number {
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) return fallback;
+    return Math.min(max, Math.max(min, raw));
   }
 
   private pickFilter(
