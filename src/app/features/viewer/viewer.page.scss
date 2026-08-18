@@ -16,3 +16,44 @@ ov-page-canvas {
   display: block;
   min-height: 0;
 }
+
+/* Discrete, transparent, centered-top trigger. Touch target is 44x44
+   (Apple HIG min) but the visible glyph is smaller so it reads as
+   "barely there". */
+.quick-actions-trigger {
+  position: absolute;
+  top: max(env(safe-area-inset-top, 12px), 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+
+  background: transparent;
+  border: 0;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.quick-actions-trigger:hover,
+.quick-actions-trigger:focus-visible {
+  color: rgba(255, 255, 255, 0.95);
+  background-color: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.quick-actions-trigger:active {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.quick-actions-trigger ion-icon {
+  font-size: 24px;
+}

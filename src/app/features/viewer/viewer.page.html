@@ -1,20 +1,17 @@
-<ion-header>
-  <ion-toolbar>
-    <ion-buttons slot="start">
-      <ion-menu-button></ion-menu-button>
-    </ion-buttons>
-    <ion-title>{{ progress() || 'Viewer' }}</ion-title>
-    <ion-buttons slot="end">
-      <ion-button (click)="prev()" [disabled]="!hasPrev()">
-        <ion-icon slot="icon-only" ios="chevron-back-outline" md="chevron-back-sharp"></ion-icon>
-      </ion-button>
-      <ion-button (click)="next()" [disabled]="!hasNext()">
-        <ion-icon slot="icon-only" ios="chevron-forward-outline" md="chevron-forward-sharp"></ion-icon>
-      </ion-button>
-    </ion-buttons>
-  </ion-toolbar>
-</ion-header>
-
 <ion-content [scrollY]="false">
   <ov-page-canvas [page]="page()" />
+
+  <button
+    type="button"
+    class="quick-actions-trigger"
+    aria-label="Open quick actions"
+    (click)="openQuickActions()"
+  >
+    <ion-icon ios="ellipsis-horizontal-circle-outline" md="ellipsis-horizontal-sharp"></ion-icon>
+  </button>
 </ion-content>
+
+<ov-quick-actions-modal
+  [isOpen]="quickActionsOpen()"
+  (didDismiss)="closeQuickActions()"
+/>

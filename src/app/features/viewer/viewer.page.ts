@@ -4,26 +4,18 @@ import {
   computed,
   effect,
   inject,
+  signal,
 } from '@angular/core';
-import {
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonMenuButton,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/angular/standalone';
+import { IonContent, IonIcon } from '@ionic/angular/standalone';
 
 import { buildKingdomSample } from '../../core/debug/sample-books';
 import { BookstoreService } from '../../core/services/bookstore.service';
 import { PageCanvasComponent } from './page-canvas.component';
+import { QuickActionsModalComponent } from './quick-actions-modal.component';
 
 /**
- * v1 Viewer: loads the local Kingdom sample book on first paint, renders
- * the current page in <ov-page-canvas>, exposes prev/next buttons in the
- * toolbar.
+ * v1 Viewer: headerless, full-bleed canvas with a small, transparent,
+ * centered-top floating button that opens a tabbed quick-actions modal.
  *
  * The sample loader is dev-only. Real book opening comes from the
  * File Browser / Bookshelf issues — this page just consumes whatever the
@@ -33,17 +25,7 @@ import { PageCanvasComponent } from './page-canvas.component';
   selector: 'ov-viewer',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    IonButton,
-    IonButtons,
-    IonContent,
-    IonHeader,
-    IonIcon,
-    IonMenuButton,
-    IonTitle,
-    IonToolbar,
-    PageCanvasComponent,
-  ],
+  imports: [IonContent, IonIcon, PageCanvasComponent, QuickActionsModalComponent],
   templateUrl: './viewer.page.html',
   styleUrls: ['./viewer.page.scss'],
 })
@@ -52,9 +34,13 @@ export class ViewerPage {
 
   /** Reactive snapshot the template binds to. */
   public readonly page = this.bookstore.currentPage;
-  public readonly hasPrev = this.bookstore.hasPrev;
-  public readonly hasNext = this.bookstore.hasNext;
-  /** Progress string like "12 / 63" for the toolbar title. */
+
+  /** Local UI state: is the quick-actions modal open? */
+  private readonly _quickActionsOpen = signal(false);
+  public readonly quickActionsOpen = this._quickActionsOpen.asReadonly();
+
+  /** Progress string like "12 / 63" — exposed for the future progress
+   *  bottom sheet; not rendered in the template today. */
   public readonly progress = computed(() => {
     const p = this.page();
     if (p === null) return '';
@@ -72,11 +58,11 @@ export class ViewerPage {
     });
   }
 
-  public next(): void {
-    this.bookstore.next();
+  public openQuickActions(): void {
+    this._quickActionsOpen.set(true);
   }
 
-  public prev(): void {
-    this.bookstore.prev();
+  public closeQuickActions(): void {
+    this._quickActionsOpen.set(false);
   }
 }
