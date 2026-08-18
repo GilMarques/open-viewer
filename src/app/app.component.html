@@ -2,9 +2,7 @@
   <ion-split-pane contentId="main-content">
     <ion-menu contentId="main-content" type="overlay">
       <ion-content>
-        <ion-list id="library-list">
-          <ion-list-header>Library</ion-list-header>
-
+        <ion-list>
           @for (item of library; track item.url) {
             <ion-menu-toggle auto-hide="false">
               <ion-item
@@ -24,11 +22,6 @@
               </ion-item>
             </ion-menu-toggle>
           }
-        </ion-list>
-
-        <ion-list id="settings-list">
-          <ion-list-header>Settings</ion-list-header>
-
           @for (item of settings; track item.url) {
             <ion-menu-toggle auto-hide="false">
               <ion-item
