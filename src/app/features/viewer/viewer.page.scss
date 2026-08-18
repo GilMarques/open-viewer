@@ -11,6 +11,18 @@ ion-content::part(scroll) {
   display: flex;
 }
 
+/* The .stage wraps <ov-page-canvas> so the CSS `filter` (brightness /
+   blue light / contrast / gamma) targets the canvas without affecting
+   the floating trigger or the page background. */
+.stage {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  min-width: 0;
+}
+
 ov-page-canvas {
   flex: 1 1 auto;
   display: block;

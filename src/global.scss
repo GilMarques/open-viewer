@@ -32,6 +32,19 @@
  * https://ionicframework.com/docs/theming/dark-mode
  */
 
-/* @import "@ionic/angular/css/palettes/dark.always.css"; */
-/* @import "@ionic/angular/css/palettes/dark.class.css"; */
+@import "@ionic/angular/css/palettes/dark.class.css";
 @import "@ionic/angular/css/palettes/dark.system.css";
+
+/* OpenViewer theme overrides.
+ *
+ * - 'ov-theme-light' / 'ov-theme-dark' are applied to <html> by
+ *   SettingsService via AppComponent.
+ * - 'auto' theme falls through to Ionic's dark.system.css media query.
+ */
+.ov-theme-dark {
+  color-scheme: dark;
+}
+
+.ov-theme-light {
+  color-scheme: light;
+}

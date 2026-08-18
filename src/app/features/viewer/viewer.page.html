@@ -1,5 +1,7 @@
 <ion-content [scrollY]="false">
-  <ov-page-canvas [page]="page()" />
+  <div class="stage" [style.filter]="canvasFilter()">
+    <ov-page-canvas [page]="page()" />
+  </div>
 
   <button
     type="button"

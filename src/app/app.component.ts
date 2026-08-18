@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import {
   IonApp,
@@ -15,6 +15,8 @@ import {
   IonSplitPane,
 } from '@ionic/angular/standalone';
 
+import { SettingsService } from './core/services/settings.service';
+
 type MenuItem = { title: string; url: string; icon: string };
 
 @Component({
@@ -28,7 +30,6 @@ type MenuItem = { title: string; url: string; icon: string };
     IonSplitPane,
     IonMenu,
     IonContent,
-    IonLabel,
     IonList,
     IonMenuToggle,
     IonItem,
@@ -42,18 +43,40 @@ type MenuItem = { title: string; url: string; icon: string };
   styleUrls: ['./app.component.scss'],
 })
 export class AppComponent {
+  private readonly settings = inject(SettingsService);
+
   public readonly library: readonly MenuItem[] = [
     { title: 'Viewer', url: '/viewer', icon: 'book' },
     { title: 'Bookshelf', url: '/bookshelf', icon: 'library' },
     { title: 'File Browser', url: '/file-browser', icon: 'folder' },
   ];
 
-  public readonly settings: readonly MenuItem[] = [
+  public readonly settingsMenu: readonly MenuItem[] = [
     { title: 'Preferences', url: '/preferences', icon: 'settings' },
     { title: 'About', url: '/about', icon: 'information-circle' },
   ];
 
-  // Donate is wired but inert until a payment target is chosen.
-  // Swap `disabled` in the template for a routerLink / click handler
-  // once you decide on a destination (Patreon, GitHub Sponsors, etc).
+  constructor() {
+    // Apply theme at the document level so every page inherits it.
+    effect(() => {
+      applyTheme(this.settings.settings().display.interfaceTheme);
+    });
+  }
+}
+
+/**
+ * Apply a theme via two classes on <html>:
+ *  - ov-theme-light / ov-theme-dark → our own hook for app-wide overrides
+ *  - ion-palette-dark               → Ionic's dark-mode palette trigger
+ *
+ * 'auto' falls through to Ionic's prefers-color-scheme media query.
+ */
+function applyTheme(theme: 'auto' | 'light' | 'dark'): void {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  root.classList.remove('ov-theme-light', 'ov-theme-dark', 'ion-palette-dark');
+  if (theme === 'light') root.classList.add('ov-theme-light');
+  else if (theme === 'dark') {
+    root.classList.add('ov-theme-dark', 'ion-palette-dark');
+  }
 }

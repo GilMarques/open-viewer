@@ -20,7 +20,10 @@ import {
   type SegmentChangeEventDetail,
 } from '@ionic/angular/standalone';
 
-type QuickActionsTab = 'menu' | 'more';
+import { DisplaySettingsComponent } from './display-settings.component';
+import { FiltersSettingsComponent } from './filters-settings.component';
+
+type QuickActionsTab = 'menu' | 'display' | 'filters';
 
 interface QuickActionEntry {
   readonly title: string;
@@ -31,14 +34,16 @@ interface QuickActionEntry {
 /**
  * Modal sheet with tabbed quick actions.
  *
- * v1: two tabs.
- *   - "Menu"   — mirror of the side-drawer entries (Viewer, Bookshelf,
- *                File Browser, Preferences, About). Tap → navigates and
- *                closes the modal.
- *   - "More"   — placeholder for future quick actions.
+ * v1: three tabs.
+ *   - "Main menu" — mirror of the side-drawer entries. Tap → navigates and
+ *                    closes the modal.
+ *   - "Display"   — reading-direction, page-layout, theme, viewer-mode,
+ *                    page-transition, orientation controls.
+ *   - "Filters"   — brightness / blue light / contrast / gamma sliders.
  *
- * Future tabs (page navigation, settings, bookmarks, etc.) slot in
- * without changing this component's contract.
+ * Future tabs (settings, bookmarks, etc.) slot in without changing this
+ * component's contract — add to the QuickActionsTab union and the
+ * `@switch` / `@else if` ladder in the template.
  */
 @Component({
   selector: 'ov-quick-actions-modal',
@@ -46,6 +51,8 @@ interface QuickActionEntry {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
+    DisplaySettingsComponent,
+    FiltersSettingsComponent,
     IonButton,
     IonContent,
     IonIcon,
@@ -68,39 +75,46 @@ interface QuickActionEntry {
         <ion-toolbar>
           <ion-segment [value]="activeTab()" (ionChange)="onTabChange($event)">
             <ion-segment-button value="menu">
-              <ion-label>Menu</ion-label>
+              <ion-label>Main menu</ion-label>
             </ion-segment-button>
-            <ion-segment-button value="more">
-              <ion-label>More</ion-label>
+            <ion-segment-button value="display">
+              <ion-label>Display</ion-label>
+            </ion-segment-button>
+            <ion-segment-button value="filters">
+              <ion-label>Filters</ion-label>
             </ion-segment-button>
           </ion-segment>
           <ion-button slot="end" fill="clear" (click)="close()">Close</ion-button>
         </ion-toolbar>
 
         <ion-content>
-          @if (activeTab() === 'menu') {
-            <ion-list>
-              @for (entry of menu; track entry.url) {
-                <ion-item
-                  button
-                  [routerLink]="[entry.url]"
-                  (click)="close()"
-                  lines="none"
-                >
-                  <ion-icon
-                    aria-hidden="true"
-                    slot="start"
-                    [ios]="entry.icon + '-outline'"
-                    [md]="entry.icon + '-sharp'"
-                  ></ion-icon>
-                  <ion-label>{{ entry.title }}</ion-label>
-                </ion-item>
-              }
-            </ion-list>
-          } @else {
-            <div class="placeholder">
-              <p>More quick actions will live here.</p>
-            </div>
+          @switch (activeTab()) {
+            @case ('menu') {
+              <ion-list>
+                @for (entry of menu; track entry.url) {
+                  <ion-item
+                    button
+                    [routerLink]="[entry.url]"
+                    (click)="close()"
+                    lines="none"
+                  >
+                    <ion-icon
+                      aria-hidden="true"
+                      slot="start"
+                      [ios]="entry.icon + '-outline'"
+                      [md]="entry.icon + '-sharp'"
+                    ></ion-icon>
+                    <ion-label>{{ entry.title }}</ion-label>
+                  </ion-item>
+                }
+              </ion-list>
+            }
+            @case ('display') {
+              <ov-display-settings />
+            }
+            @case ('filters') {
+              <ov-filters-settings />
+            }
           }
         </ion-content>
       </ng-template>
@@ -110,11 +124,6 @@ interface QuickActionEntry {
     `
       ion-segment {
         flex: 1 1 auto;
-      }
-      .placeholder {
-        padding: 32px 24px;
-        opacity: 0.6;
-        text-align: center;
       }
     `,
   ],
@@ -139,12 +148,12 @@ export class QuickActionsModalComponent {
 
   /**
    * Ionic types the segment `ionChange` event as
-   * `EventEmitter<CustomEvent<SegmentChangeEventDetail>>`. The handler
-   * narrows `value` (`SegmentValue | undefined`) to our union of tabs.
+   * `EventEmitter<CustomEvent<SegmentChangeEventDetail>>`. Narrow
+   * `value` (`SegmentValue | undefined`) to our union of tabs.
    */
   public onTabChange(event: CustomEvent<SegmentChangeEventDetail>): void {
     const value = event.detail.value;
-    if (value === 'menu' || value === 'more') {
+    if (value === 'menu' || value === 'display' || value === 'filters') {
       this._activeTab.set(value);
     }
   }
