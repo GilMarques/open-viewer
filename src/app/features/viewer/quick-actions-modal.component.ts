@@ -7,7 +7,6 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import {
-  IonButton,
   IonContent,
   IonIcon,
   IonItem,
@@ -53,7 +52,7 @@ interface QuickActionEntry {
     RouterLink,
     DisplaySettingsComponent,
     FiltersSettingsComponent,
-    IonButton,
+
     IonContent,
     IonIcon,
     IonItem,
@@ -84,7 +83,7 @@ interface QuickActionEntry {
               <ion-label>Filters</ion-label>
             </ion-segment-button>
           </ion-segment>
-          <ion-button slot="end" fill="clear" (click)="close()">Close</ion-button>
+
         </ion-toolbar>
 
         <ion-content>
@@ -124,6 +123,15 @@ interface QuickActionEntry {
     `
       ion-segment {
         flex: 1 1 auto;
+      }
+      /* Drop the dim layer so the reader stays visible behind the sheet. */
+      ion-modal::part(backdrop) {
+        background: transparent;
+      }
+      /* Translucent sheet — let the reader bleed through the panel. */
+      ion-modal::part(content) {
+        background: color-mix(in srgb, var(--ion-background-color, #fff) 70%, transparent);
+        backdrop-filter: blur(12px);
       }
     `,
   ],
