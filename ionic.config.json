@@ -1,0 +1,7 @@
+{
+  "name": "OpenViewer",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular"
+}
