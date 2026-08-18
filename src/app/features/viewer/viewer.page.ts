@@ -178,6 +178,19 @@ export class ViewerPage {
 
   // ──────────── Magnifier pointer handlers ────────────
 
+  /** Hold duration before the loupe appears. Matches the Android long-press
+   *  convention so a quick tap or scroll gesture never triggers it. */
+  private static readonly HOLD_MS = 300;
+  /** Movement (in CSS px) within the hold window that still counts as a
+   *  hold. Beyond this we treat the gesture as a drag and bail out. */
+  private static readonly HOLD_SLOP_PX = 8;
+
+  /** setTimeout handle for the hold-delay activation. Cleared on move/up. */
+  private holdTimer: number | null = null;
+  /** Pointer position when the hold started — used for the slop check. */
+  private holdStartX = 0;
+  private holdStartY = 0;
+
   public onStagePointerDown(event: PointerEvent): void {
     // Only main button (mouse left, single-finger touch, pen).
     if (event.button !== 0) return;
@@ -189,7 +202,13 @@ export class ViewerPage {
     this._viewportHeight.set(window.innerHeight);
     this.pointerX.set(event.clientX);
     this.pointerY.set(event.clientY);
-    this._magnifierActive.set(true);
+    this.holdStartX = event.clientX;
+    this.holdStartY = event.clientY;
+    this.clearHoldTimer();
+    this.holdTimer = setTimeout(() => {
+      this.holdTimer = null;
+      this._magnifierActive.set(true);
+    }, ViewerPage.HOLD_MS);
     // Capture the pointer so we keep getting move/up events even if the
     // user drags off the stage. releasePointerCapture fires automatically
     // on pointerup / pointercancel.
@@ -201,15 +220,33 @@ export class ViewerPage {
   }
 
   public onStagePointerMove(event: PointerEvent): void {
-    if (!this._magnifierActive()) return;
-    this.pointerX.set(event.clientX);
-    this.pointerY.set(event.clientY);
+    // Active loupe — track the pointer.
+    if (this._magnifierActive()) {
+      this.pointerX.set(event.clientX);
+      this.pointerY.set(event.clientY);
+      return;
+    }
+    // Still in the hold window — cancel if the user has moved too far.
+    if (this.holdTimer !== null) {
+      const dx = event.clientX - this.holdStartX;
+      const dy = event.clientY - this.holdStartY;
+      if (dx * dx + dy * dy > ViewerPage.HOLD_SLOP_PX * ViewerPage.HOLD_SLOP_PX) {
+        this.clearHoldTimer();
+      }
+    }
   }
 
   public onStagePointerUp(): void {
+    this.clearHoldTimer();
     this._magnifierActive.set(false);
   }
 
+  private clearHoldTimer(): void {
+    if (this.holdTimer !== null) {
+      clearTimeout(this.holdTimer);
+      this.holdTimer = null;
+    }
+  }
   /**
    * Cancel the magnifier on window blur (alt-tab) or visibility change
    * so it doesn't get stuck visible after the user leaves.
