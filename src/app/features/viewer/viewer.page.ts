@@ -15,6 +15,7 @@ import { buildKingdomSample } from '../../core/debug/sample-books';
 import type { FilterSettings } from '../../core/models/settings.model';
 import { SettingsService } from '../../core/services/settings.service';
 import { BookstoreService } from '../../core/services/bookstore.service';
+import { MagnifierStateService } from '../../core/services/magnifier-state.service';
 import { BookSpreadComponent } from './book-spread.component';
 import { QuickActionsModalComponent } from './quick-actions-modal.component';
 import { MagnifierComponent } from './magnifier.component';
@@ -58,6 +59,7 @@ import { MagnifierComponent } from './magnifier.component';
 export class ViewerPage {
   private readonly bookstore = inject(BookstoreService);
   private readonly settings = inject(SettingsService);
+  private readonly magnifierState = inject(MagnifierStateService);
 
   /** Open book, or null. Bound to the spread component. */
   public readonly openBook = computed(() => this.bookstore.state().book);
@@ -93,9 +95,9 @@ export class ViewerPage {
   /** Reference to the stage element (.stage) for rect queries. */
   private readonly stageRef = viewChild<ElementRef<HTMLDivElement>>('stage');
 
-  /** Pointer currently down on the stage? */
-  private readonly _magnifierActive = signal(false);
-  public readonly magnifierActive = this._magnifierActive.asReadonly();
+  /** Live magnifier-active flag, shared with the book-spread so it can
+   *  gate the page-flip curl gesture while the loupe is up. */
+  public readonly magnifierActive = this.magnifierState.active;
 
   /** Pointer X/Y in viewport coords. */
   public readonly pointerX = signal(0);
@@ -207,7 +209,7 @@ export class ViewerPage {
     this.clearHoldTimer();
     this.holdTimer = setTimeout(() => {
       this.holdTimer = null;
-      this._magnifierActive.set(true);
+      this.magnifierState.setActive(true);
     }, ViewerPage.HOLD_MS);
     // Capture the pointer so we keep getting move/up events even if the
     // user drags off the stage. releasePointerCapture fires automatically
@@ -220,8 +222,7 @@ export class ViewerPage {
   }
 
   public onStagePointerMove(event: PointerEvent): void {
-    // Active loupe — track the pointer.
-    if (this._magnifierActive()) {
+    if (this.magnifierState.active()) {
       this.pointerX.set(event.clientX);
       this.pointerY.set(event.clientY);
       return;
@@ -238,7 +239,7 @@ export class ViewerPage {
 
   public onStagePointerUp(): void {
     this.clearHoldTimer();
-    this._magnifierActive.set(false);
+    this.magnifierState.setActive(false);
   }
 
   private clearHoldTimer(): void {
@@ -253,12 +254,14 @@ export class ViewerPage {
    */
   @HostListener('window:blur')
   public onWindowBlur(): void {
-    this._magnifierActive.set(false);
+    this.magnifierState.setActive(false);
   }
 
   @HostListener('document:visibilitychange')
   public onVisibilityChange(): void {
-    if (document.hidden) this._magnifierActive.set(false);
+    if (document.hidden) {
+      this.magnifierState.setActive(false);
+    }
   }
 }
 

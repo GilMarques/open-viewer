@@ -14,6 +14,7 @@ import {
 import { BookFlipService } from '../../core/services/book-flip.service';
 import { SettingsService } from '../../core/services/settings.service';
 import { BookstoreService } from '../../core/services/bookstore.service';
+import { MagnifierStateService } from '../../core/services/magnifier-state.service';
 import type { Book } from '../../core/models/book.model';
 import type { PageLayout, ZoomMode } from '../../core/models/settings.model';
 
@@ -56,7 +57,7 @@ export class BookSpreadComponent implements AfterViewInit, OnDestroy {
   private readonly flip = inject(BookFlipService);
   private readonly bookstore = inject(BookstoreService);
   private readonly settings = inject(SettingsService);
-
+  private readonly magnifierState = inject(MagnifierStateService);
   /**
    * Map the user-facing PageLayout setting to the lib's two modes.
    * 'default' / 'auto-single' → single-page; 'auto-dual' → spread;
@@ -88,10 +89,13 @@ export class BookSpreadComponent implements AfterViewInit, OnDestroy {
       this.flip.mount(host, book, layout, zoom);
     });
 
-    // Gate the lib's curl gesture on `cornersVisible()`.
+    // Gate the lib's curl gesture: only when zoom is 1 AND the magnifier
+    // isn't holding the pointer. Either condition disqualifies the curl
+    // (zoom > 1: corners off-screen; magnifier active: same pointer that
+    // would otherwise drive the curl is being used for the loupe).
     effect(() => {
-      const visible = this.bookstore.cornersVisible();
-      this.flip.setFlippingEnabled(visible);
+      const flipOk = this.bookstore.cornersVisible() && !this.magnifierState.active();
+      this.flip.setFlippingEnabled(flipOk);
     });
   }
 
