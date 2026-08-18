@@ -20,6 +20,7 @@ import type {
   ReadingDirection,
   ScreenOrientation,
   ViewerMode,
+  ZoomMode,
 } from '../../core/models/settings.model';
 import { SettingsService } from '../../core/services/settings.service';
 
@@ -65,6 +66,16 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
   { value: 'portrait-inverted', label: 'Portrait (inverted)' },
   { value: 'landscape-inverted', label: 'Landscape (inverted)' },
   { value: 'default', label: 'Default' },
+];
+
+const ZOOM_OPTIONS: readonly Option<ZoomMode>[] = [
+  { value: 'actual-size', label: 'Actual size' },
+  { value: 'fit-screen', label: 'Fit to screen' },
+  { value: 'fit-width', label: 'Fit to width' },
+  { value: 'fit-height', label: 'Fit to height' },
+  { value: 'fixed-size', label: 'Fixed size' },
+  { value: 'stretch-to-fill', label: 'Stretch to fill screen' },
+  { value: 'cover', label: 'Cover' },
 ];
 
 const READING_DIRECTION_OPTIONS: readonly Option<ReadingDirection>[] = [
@@ -157,6 +168,27 @@ const READING_DIRECTION_OPTIONS: readonly Option<ReadingDirection>[] = [
         <ion-icon
           aria-hidden="true"
           slot="start"
+          ios="scan-outline"
+          md="scan-sharp"
+        ></ion-icon>
+        <ion-label>Zoom</ion-label>
+        <ion-select
+          [value]="zoom()"
+          (ionChange)="onZoomChange($event)"
+          interface="popover"
+          aria-label="Zoom"
+        >
+          @for (opt of zooms; track opt.value) {
+            <ion-select-option [value]="opt.value">{{ opt.label }}</ion-select-option>
+          }
+        </ion-select>
+      </ion-item>
+
+
+      <ion-item>
+        <ion-icon
+          aria-hidden="true"
+          slot="start"
           ios="contrast-outline"
           md="contrast-sharp"
         ></ion-icon>
@@ -235,6 +267,7 @@ export class DisplaySettingsComponent {
   public readonly pageTransitions = PAGE_TRANSITION_OPTIONS;
   public readonly orientations = ORIENTATION_OPTIONS;
   public readonly readingDirections = READING_DIRECTION_OPTIONS;
+  public readonly zooms = ZOOM_OPTIONS;
 
   // Bindings — read from the settings signal each cycle.
   public readonly orientation = computed(() => this.settings.settings().display.screenOrientation);
@@ -242,6 +275,7 @@ export class DisplaySettingsComponent {
   public readonly theme = computed(() => this.settings.settings().display.interfaceTheme);
   public readonly viewerMode = computed(() => this.settings.settings().display.viewerMode);
   public readonly pageTransition = computed(() => this.settings.settings().display.pageTransition);
+  public readonly zoom = computed(() => this.settings.settings().display.zoom);
   public readonly readingDirection = computed(() => this.settings.settings().display.readingDirection);
 
   public onReadingDirectionChange(event: CustomEvent<{ value: ReadingDirection | undefined }>): void {
@@ -255,6 +289,21 @@ export class DisplaySettingsComponent {
 
   public onPageLayoutChange(event: CustomEvent<{ value: PageLayout | undefined }>): void {
     if (event.detail.value !== undefined) this.settings.setPageLayout(event.detail.value);
+  }
+
+  public onZoomChange(event: CustomEvent<{ value: ZoomMode | undefined }>): void {
+    const v = event.detail.value;
+    if (
+      v === 'actual-size' ||
+      v === 'fit-screen' ||
+      v === 'fit-width' ||
+      v === 'fit-height' ||
+      v === 'fixed-size' ||
+      v === 'stretch-to-fill' ||
+      v === 'cover'
+    ) {
+      this.settings.setZoom(v);
+    }
   }
 
   public onThemeChange(event: CustomEvent<{ value: InterfaceTheme | undefined }>): void {

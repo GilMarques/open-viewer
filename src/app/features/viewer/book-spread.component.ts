@@ -15,7 +15,7 @@ import { BookFlipService } from '../../core/services/book-flip.service';
 import { SettingsService } from '../../core/services/settings.service';
 import { BookstoreService } from '../../core/services/bookstore.service';
 import type { Book } from '../../core/models/book.model';
-import type { PageLayout } from '../../core/models/settings.model';
+import type { PageLayout, ZoomMode } from '../../core/models/settings.model';
 
 /**
  * The host for a `page-flip` instance. Mounts the flip lib on its
@@ -68,17 +68,24 @@ export class BookSpreadComponent implements AfterViewInit, OnDestroy {
     return 'single';
   });
 
+  /** Current zoom mode. Passed to the lib on mount; v1 doesn't differentiate
+   *  the modes visually yet (the page-flip renderer always stretches to the
+   *  host), but the value is persisted and a remount fires on change so
+   *  the wiring is in place for the v2 native renderer. */
+  public readonly zoom = computed<ZoomMode>(() => this.settings.settings().display.zoom);
+
   constructor() {
     // Remount the flip instance whenever the book OR layout changes.
     effect(() => {
       const book = this.book();
       const layout = this.layout();
+      const zoom = this.zoom();
       if (book === null) return;
       // Read the host element; if the view isn't initialized yet, skip —
       // ngAfterViewInit will handle the initial mount.
       const host = this.hostRef()?.nativeElement;
       if (host === undefined) return;
-      this.flip.mount(host, book, layout);
+      this.flip.mount(host, book, layout, zoom);
     });
 
     // Gate the lib's curl gesture on `cornersVisible()`.
@@ -94,7 +101,7 @@ export class BookSpreadComponent implements AfterViewInit, OnDestroy {
     const book = this.book();
     if (book === null) return;
     const host = this.hostRef().nativeElement;
-    this.flip.mount(host, book, this.layout());
+    this.flip.mount(host, book, this.layout(), this.zoom());
   }
 
   public ngOnDestroy(): void {

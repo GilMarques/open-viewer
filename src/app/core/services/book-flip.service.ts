@@ -3,7 +3,7 @@ import { Injectable, signal } from '@angular/core';
 import { PageFlip, FlippingState, type FlipSetting } from 'page-flip';
 
 import type { Book } from '../models/book.model';
-
+import type { ZoomMode } from '../models/settings.model';
 /**
  * Wraps a `page-flip` (StPageFlip) instance — owns its lifecycle, exposes
  * a tiny signal-based surface for the rest of the app, and turns the lib's
@@ -42,7 +42,7 @@ export class BookFlipService {
    * If a previous instance is still around, destroy it first. Re-entrant
    * safe: this can be called whenever the book changes.
    */
-  public mount(host: HTMLElement, book: Book, layout: 'single' | 'double'): void {
+  public mount(host: HTMLElement, book: Book, layout: 'single' | 'double', zoom: ZoomMode = 'stretch-to-fill'): void {
     this.unmount();
 
     const settings: Partial<FlipSetting> = {

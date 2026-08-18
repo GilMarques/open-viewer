@@ -30,6 +30,21 @@ export type InterfaceTheme = 'auto' | 'light' | 'dark';
 
 export type ViewerMode = 'paged' | 'vertical-scroll' | 'horizontal-scroll';
 
+/**
+ * How the page image is sized to the viewport. Persisted across sessions.
+ * 'fixed-size' is stored but the numeric picker is out of v1 scope (the
+ * page-flip v1 renderer can't honor a custom px size without remounting
+ * around the page's natural dimensions) — falls back to fit-screen.
+ */
+export type ZoomMode =
+  | 'actual-size'
+  | 'fit-screen'
+  | 'fit-width'
+  | 'fit-height'
+  | 'fixed-size'
+  | 'stretch-to-fill'
+  | 'cover';
+
 export type PageTransition = 'none' | 'slide-horizontal' | 'slide-vertical' | 'page-curl';
 
 /**
@@ -66,6 +81,7 @@ export interface DisplaySettings {
   readonly interfaceTheme: InterfaceTheme;
   readonly viewerMode: ViewerMode;
   readonly pageTransition: PageTransition;
+  readonly zoom: ZoomMode;
 }
 
 export interface FilterSettings {
@@ -95,6 +111,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     interfaceTheme: 'auto',
     viewerMode: 'paged',
     pageTransition: 'none',
+    zoom: 'fit-screen',
   },
   filters: {
     brightness: { enabled: false, value: 100 },

@@ -15,6 +15,7 @@ import {
   type ReadingDirection,
   type ScreenOrientation,
   type ViewerMode,
+  type ZoomMode,
 } from '../models/settings.model';
 
 const STORAGE_KEY = 'openviewer:settings:v1';
@@ -66,6 +67,10 @@ export class SettingsService {
 
   public setPageTransition(value: PageTransition): void {
     this._settings.update((s) => ({ ...s, display: { ...s.display, pageTransition: value } }));
+  }
+
+  public setZoom(value: ZoomMode): void {
+    this._settings.update((s) => ({ ...s, display: { ...s.display, zoom: value } }));
   }
 
   // ──────────────────────── Filter setters ────────────────────────
@@ -142,6 +147,7 @@ export class SettingsService {
       interfaceTheme: this.pickEnum(d['interfaceTheme'], ['auto', 'light', 'dark'], fallback.display.interfaceTheme),
       viewerMode: this.pickEnum(d['viewerMode'], ['paged', 'vertical-scroll', 'horizontal-scroll'], fallback.display.viewerMode),
       pageTransition: this.pickEnum(d['pageTransition'], ['none', 'slide-horizontal', 'slide-vertical', 'page-curl'], fallback.display.pageTransition),
+      zoom: this.pickEnum(d['zoom'], ['actual-size', 'fit-screen', 'fit-width', 'fit-height', 'fixed-size', 'stretch-to-fill', 'cover'], fallback.display.zoom),
     };
 
     const f = (i.filters ?? {}) as Record<string, unknown>;
