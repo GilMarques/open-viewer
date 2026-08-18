@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  HostListener,
   computed,
   effect,
   inject,
@@ -11,28 +12,33 @@ import { IonContent, IonIcon } from '@ionic/angular/standalone';
 import { buildKingdomSample } from '../../core/debug/sample-books';
 import { SettingsService } from '../../core/services/settings.service';
 import { BookstoreService } from '../../core/services/bookstore.service';
-import { PageCanvasComponent } from './page-canvas.component';
+import { BookSpreadComponent } from './book-spread.component';
 import { QuickActionsModalComponent } from './quick-actions-modal.component';
 
 /**
- * v1 Viewer: headerless, full-bleed canvas with a small, transparent,
+ * v1 Viewer: headerless, full-bleed book spread with a small, transparent,
  * centered-top floating button that opens a tabbed quick-actions modal.
  *
  * Settings application:
  *  - Theme is applied at the document level by AppComponent (so every
  *    page inherits it; not just the Viewer).
- *  - Reading direction is bound to the host `[dir]` attribute (flips
- *    horizontal layouts).
+ *  - Reading direction is bound to the host `[dir]` attribute.
  *  - Filters are exposed as a CSS `filter` string the template binds to
- *    the canvas stage.
- *  - Page transition is stored but inert — the bottom-sheet progress
- *    component will read it.
+ *    the spread host wrapper.
+ *  - Page transition is stored but inert until the bottom-sheet lands.
+ *
+ * Page rendering:
+ *  - <ov-book-spread> mounts a `page-flip` instance. The lib draws the
+ *    curl effect over our page images; we own layout, gating, and zoom.
+ *  - Desktop wheel zoom: when zoom > 1 the curl gesture is auto-disabled
+ *    (BookFlipService.setFlippingEnabled(false)), preventing the user
+ *    from grabbing a corner that's off-screen.
  */
 @Component({
   selector: 'ov-viewer',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IonContent, IonIcon, PageCanvasComponent, QuickActionsModalComponent],
+  imports: [IonContent, IonIcon, BookSpreadComponent, QuickActionsModalComponent],
   templateUrl: './viewer.page.html',
   styleUrls: ['./viewer.page.scss'],
   host: {
@@ -43,26 +49,24 @@ export class ViewerPage {
   private readonly bookstore = inject(BookstoreService);
   private readonly settings = inject(SettingsService);
 
-  /** Reactive snapshot the template binds to. */
-  public readonly page = this.bookstore.currentPage;
+  /** Open book, or null. Bound to the spread component. */
+  public readonly openBook = computed(() => this.bookstore.state().book);
 
-  /** Local UI state: is the quick-actions modal open? */
-  private readonly _quickActionsOpen = signal(false);
-  public readonly quickActionsOpen = this._quickActionsOpen.asReadonly();
-
-  /** CSS `filter` string applied to the canvas stage. */
+  /** CSS `filter` string applied to the spread wrapper. */
   public readonly canvasFilter = computed(() => buildFilterString(this.settings.settings().filters));
 
   /** Reading direction bound to the host `[dir]` attribute. */
   public readonly direction = computed<'ltr' | 'rtl'>(() => this.settings.settings().display.readingDirection);
 
-  /** Progress string like "12 / 63" — exposed for the future progress
-   *  bottom sheet; not rendered in the template today. */
+  /** Local UI state: is the quick-actions modal open? */
+  private readonly _quickActionsOpen = signal(false);
+  public readonly quickActionsOpen = this._quickActionsOpen.asReadonly();
+
+  /** Progress string for the future bottom-sheet. */
   public readonly progress = computed(() => {
-    const p = this.page();
-    if (p === null) return '';
-    const total = this.bookstore.state().book?.pages.length ?? 0;
-    return `${p.index + 1} / ${total}`;
+    const s = this.bookstore.state();
+    if (s.book === null) return '';
+    return `${s.currentIndex + 1} / ${s.book.pages.length}`;
   });
 
   constructor() {
@@ -82,17 +86,28 @@ export class ViewerPage {
   public closeQuickActions(): void {
     this._quickActionsOpen.set(false);
   }
+
+  /**
+   * Desktop-only wheel zoom. Ctrl+wheel = zoom (trackpad pinch is also
+   * delivered as wheel+ctrlKey on macOS). Plain wheel is left to the
+   * browser so vertical-scroll mode can use it.
+   *
+   * `preventDefault()` stops the page from scrolling underneath.
+   */
+  @HostListener('wheel', ['$event'])
+  public onWheel(event: WheelEvent): void {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    // Negative deltaY = zoom in (wheel rolled up). Map to multiplicative factor.
+    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+    this.bookstore.setZoom(factor);
+  }
 }
 
 /**
  * Build a CSS `filter` string from a FilterSettings object.
- *
- * Brightness and contrast are percentages; gamma has no CSS equivalent, so
- * we approximate it by remapping 0.5..2.5 to ~60..200% brightness. Imperfect
- * (gamma is non-linear) but free, and avoids a custom shader until v2.
- *
- * Blue light is implemented as a sepia blend + hue-rotate — close enough
- * to f.lux / Night Shift for a v1 reader.
+ * (Brightness / contrast direct; gamma approximated as a brightness curve;
+ * blue light = sepia + hue-rotate.)
  */
 function buildFilterString(filters: {
   brightness: { enabled: boolean; value: number };

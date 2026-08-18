@@ -38,8 +38,9 @@ export class BookstoreService {
     return s.book !== null && s.currentIndex > 0;
   });
 
-  /** Open a book. Resets the current index to 0. */
+  /** Open a book. Resets the current index to 0 and the zoom to 1. */
   public openBook(book: Book): void {
+    this._zoom.set(1);
     this._state.set({ book, currentIndex: 0 });
   }
 
@@ -70,5 +71,29 @@ export class BookstoreService {
     if (s.book === null) return;
     const clamped = Math.max(0, Math.min(index, s.book.pages.length - 1));
     this._state.set({ book: s.book, currentIndex: clamped });
+  }
+
+  /** Zoom factor applied to the rendered page quad. 1 = fit-screen.
+   *  Reset on book open. v1 only: desktop scroll-wheel zoom. Pinch comes later. */
+  private readonly _zoom = signal(1);
+  public readonly zoom = this._zoom.asReadonly();
+
+  /** True only when zoomed all the way out — that's the only state in v1
+   *  where a page corner is guaranteed visible. The flip lib's curl is
+   *  gated on this. */
+  public readonly cornersVisible = computed(() => this._zoom() === 1);
+
+  /** Apply a multiplicative zoom factor (e.g. wheel delta → 1.1 / 0.9).
+   *  Clamped to [1, 4]. No-op on books that aren't open. */
+  public setZoom(factor: number): void {
+    if (this._state().book === null) return;
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    const next = Math.min(4, Math.max(1, this._zoom() * factor));
+    this._zoom.set(next);
+  }
+
+  /** Reset zoom to 1 (used on book open + on closing the modal). */
+  public resetZoom(): void {
+    this._zoom.set(1);
   }
 }
