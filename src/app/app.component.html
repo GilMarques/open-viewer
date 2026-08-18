@@ -50,6 +50,23 @@
           }
         </ion-list>
       </ion-content>
+
+      <ion-footer class="donate-footer">
+        <ion-button
+          expand="block"
+          color="tertiary"
+          disabled="true"
+          aria-label="Donate (not configured)"
+        >
+          <ion-icon
+            aria-hidden="true"
+            slot="start"
+            ios="heart-outline"
+            md="heart-sharp"
+          ></ion-icon>
+          Donate
+        </ion-button>
+      </ion-footer>
     </ion-menu>
     <ion-router-outlet id="main-content"></ion-router-outlet>
   </ion-split-pane>

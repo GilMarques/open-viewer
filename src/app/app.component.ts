@@ -2,7 +2,9 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import {
   IonApp,
+  IonButton,
   IonContent,
+  IonFooter,
   IonIcon,
   IonItem,
   IonLabel,
@@ -34,6 +36,8 @@ type MenuItem = { title: string; url: string; icon: string };
     IonIcon,
     IonLabel,
     IonRouterOutlet,
+    IonFooter,
+    IonButton,
   ],
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss'],
@@ -49,4 +53,8 @@ export class AppComponent {
     { title: 'Preferences', url: '/preferences', icon: 'settings' },
     { title: 'About', url: '/about', icon: 'information-circle' },
   ];
+
+  // Donate is wired but inert until a payment target is chosen.
+  // Swap `disabled` in the template for a routerLink / click handler
+  // once you decide on a destination (Patreon, GitHub Sponsors, etc).
 }

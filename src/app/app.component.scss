@@ -111,3 +111,15 @@ ion-note {
 ion-item.selected {
   --color: var(--ion-color-primary);
 }
+
+.donate-footer {
+  background: var(--ion-background-color, #fff);
+  border-top: 1px solid var(--ion-background-color-step-150, #d7d8da);
+  padding: 12px 16px;
+}
+
+.donate-footer ion-button {
+  margin: 0;
+  --border-radius: 8px;
+  font-weight: 600;
+}
