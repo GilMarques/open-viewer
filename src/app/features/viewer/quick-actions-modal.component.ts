@@ -89,13 +89,11 @@ interface QuickActionEntry {
         <ion-content>
           @switch (activeTab()) {
             @case ('menu') {
-              <ion-list>
+              <ion-list lines="none">
                 @for (entry of menu; track entry.url) {
                   <ion-item
                     button
                     [routerLink]="[entry.url]"
-                    (click)="close()"
-                    lines="none"
                   >
                     <ion-icon
                       aria-hidden="true"

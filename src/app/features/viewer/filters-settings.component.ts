@@ -45,7 +45,7 @@ const FILTER_ROWS: readonly FilterRow[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [IonItem, IonLabel, IonList, IonNote, IonRange, IonToggle],
   template: `
-    <ion-list lines="full" class="filters-list">
+    <ion-list lines="none" class="filters-list">
       @for (row of rows; track row.key) {
         <ion-item>
           <ion-toggle

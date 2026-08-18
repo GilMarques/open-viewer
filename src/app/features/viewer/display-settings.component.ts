@@ -92,7 +92,7 @@ const READING_DIRECTION_OPTIONS: readonly Option<ReadingDirection>[] = [
     IonSelectOption,
   ],
   template: `
-    <ion-list lines="full" class="settings-list">
+    <ion-list lines="none" class="settings-list">
       <ion-item>
         <ion-icon
           aria-hidden="true"
