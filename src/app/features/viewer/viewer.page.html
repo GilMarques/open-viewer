@@ -6,8 +6,8 @@
     [style.image-rendering]="imageRendering()"
     (pointerdown)="onStagePointerDown($event)"
     (pointermove)="onStagePointerMove($event)"
-    (pointerup)="onStagePointerUp()"
-    (pointercancel)="onStagePointerUp()"
+    (pointerup)="onStagePointerUp($event)"
+    (pointercancel)="onStagePointerUp($event)"
   >
     <ov-book-spread [book]="openBook()" />
   </div>

@@ -1,9 +1,10 @@
 import { Injectable, signal } from '@angular/core';
 
-import { PageFlip, FlippingState, type FlipSetting } from 'page-flip';
+import { PageFlip, type FlipSetting } from 'page-flip';
 
 import type { Book } from '../models/book.model';
 import type { ZoomMode } from '../models/settings.model';
+
 /**
  * Wraps a `page-flip` (StPageFlip) instance — owns its lifecycle, exposes
  * a tiny signal-based surface for the rest of the app, and turns the lib's
@@ -12,13 +13,13 @@ import type { ZoomMode } from '../models/settings.model';
  * v1 only supports image-mode books (one image per page). HTML-mode
  * (EPUB) lands later; the lib supports it via `loadFromHTML`.
  *
- * Why we wrap instead of using PageFlip directly:
- *  - One PageFlip instance per book. Created in BookSpreadComponent on
- *    `ngAfterViewInit`, destroyed on `ngOnDestroy` or book change.
- *  - The lib doesn't have a "current index" signal — we read it from
- *    `getCurrentPageIndex()` on its `flip` event.
- *  - `enableFlipping`/`disableFlipping` toggle the curl gesture. We
- *    gate this on `bookstore.cornersVisible()`.
+ * Input routing:
+ *  - Mounted with `useMouseEvents: false` so the lib never registers its
+ *    own mousedown/touch listeners on the canvas.
+ *  - The viewer `.stage` owns pointer events and relays page turns via
+ *    `relayPointerDown/Move/Up` and `relayTap` (see PageFlip.startUserTouch).
+ *  - This keeps the magnifier hold gesture and page-curl from fighting over
+ *    the same pointerdown.
  */
 @Injectable({ providedIn: 'root' })
 export class BookFlipService {
@@ -38,37 +39,36 @@ export class BookFlipService {
    *
    * `host` must already have its CSS size set (width/height in px). The
    * lib measures the host; if it's 0×0 the curl won't be hittable.
-   *
-   * If a previous instance is still around, destroy it first. Re-entrant
-   * safe: this can be called whenever the book changes.
    */
-  public mount(host: HTMLElement, book: Book, layout: 'single' | 'double', zoom: ZoomMode = 'stretch-to-fill'): void {
+  public mount(
+    host: HTMLElement,
+    book: Book,
+    layout: 'single' | 'double',
+    zoom: ZoomMode = 'stretch-to-fill',
+  ): void {
     this.unmount();
 
     const settings: Partial<FlipSetting> = {
       width: host.clientWidth,
       height: host.clientHeight,
-      // 'single' = one page per spread; 'double' = two-page spread (book-like).
       showPageCorners: true,
       disableFlipByClick: false,
-      // Single-page mode: each page is its own leaf; double-page: pairs.
       ...(layout === 'single'
         ? { singlePage: true, usePortrait: true }
         : { singlePage: false, usePortrait: false }),
       startZIndex: 0,
       autoSize: false,
-      // Don't let the lib draw its own shadows/CSS that fights our theme.
       drawShadow: true,
       flippingTime: 600,
-      // Mobile: pinch-to-zoom will be ours; tell the lib not to handle it.
       maxShadowOpacity: 0.5,
+      // Viewer `.stage` relays pointer events; lib must not register its own.
+      useMouseEvents: false,
     };
 
     const pf = new PageFlip(host, settings);
     pf.loadFromImages(book.pages.map((p) => p.url));
 
     pf.on('flip', (e) => {
-      // The lib reports the new index; mirror it for our consumers.
       if (typeof e.data === 'number') {
         this._currentIndex.set(e.data);
       }
@@ -93,13 +93,6 @@ export class BookFlipService {
     this._mounted.set(false);
   }
 
-  /** Toggle the lib's gesture (curl) on or off. */
-  public setFlippingEnabled(enabled: boolean): void {
-    if (this.instance === null) return;
-    if (enabled) this.instance.updateState(FlippingState.READ);
-    else this.instance.updateState(FlippingState.USER_FOLD);
-  }
-
   /** Tell the lib its container size changed (e.g. orientation flip). */
   public update(): void {
     this.instance?.update();
@@ -117,5 +110,42 @@ export class BookFlipService {
 
   public flipPrev(): void {
     this.instance?.flipPrev();
+  }
+
+  // ──────────── Pointer relay (viewer `.stage` → PageFlip API) ────────────
+
+  /** Begin a user fold/drag at viewport coordinates. */
+  public relayPointerDown(clientX: number, clientY: number): void {
+    if (this.instance === null) return;
+    this.instance.startUserTouch(this.toBookPoint(clientX, clientY));
+  }
+
+  /** Continue fold/drag or hover-corner preview. */
+  public relayPointerMove(clientX: number, clientY: number): void {
+    if (this.instance === null) return;
+    this.instance.userMove(this.toBookPoint(clientX, clientY), false);
+  }
+
+  /** End fold/drag or complete a tap-to-flip. */
+  public relayPointerUp(clientX: number, clientY: number): void {
+    if (this.instance === null) return;
+    this.instance.userStop(this.toBookPoint(clientX, clientY));
+  }
+
+  /**
+   * Quick tap without a preceding relayPointerDown — page-flip never saw
+   * pointerdown because `.stage` captured it for the magnifier hold timer.
+   */
+  public relayTap(clientX: number, clientY: number): void {
+    if (this.instance === null) return;
+    const pos = this.toBookPoint(clientX, clientY);
+    this.instance.startUserTouch(pos);
+    this.instance.userStop(pos);
+  }
+
+  /** Convert viewport coords to book-local coords (matches UI.getMousePos). */
+  private toBookPoint(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = this.instance!.getUI().getDistElement().getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
   }
 }

@@ -13,21 +13,13 @@ import {
 } from '@angular/core';
 import { BookFlipService } from '../../core/services/book-flip.service';
 import { SettingsService } from '../../core/services/settings.service';
-import { BookstoreService } from '../../core/services/bookstore.service';
-import { MagnifierStateService } from '../../core/services/magnifier-state.service';
 import type { Book } from '../../core/models/book.model';
 import type { PageLayout, ZoomMode } from '../../core/models/settings.model';
 
 /**
- * The host for a `page-flip` instance. Mounts the flip lib on its
- * element ref, forwards layout/zoom-gating signals, and tears down on
- * destroy.
- *
- * Inputs:
- *   - book: the open book. When the identity changes, the spread remounts.
- *
- * The host element gets explicit width/height (CSS sets it to fill its
- * parent). The lib measures the host; a 0-size host = no curl surface.
+ * Host for a page-flip instance. Mounts the lib on its element ref and
+ * remounts when book / layout / zoom changes. Pointer input is owned by
+ * the viewer `.stage` (useMouseEvents: false on mount).
  */
 @Component({
   selector: 'ov-book-spread',
@@ -55,53 +47,29 @@ export class BookSpreadComponent implements AfterViewInit, OnDestroy {
 
   private readonly hostRef = viewChild.required<ElementRef<HTMLDivElement>>('host');
   private readonly flip = inject(BookFlipService);
-  private readonly bookstore = inject(BookstoreService);
   private readonly settings = inject(SettingsService);
-  private readonly magnifierState = inject(MagnifierStateService);
-  /**
-   * Map the user-facing PageLayout setting to the lib's two modes.
-   * 'default' / 'auto-single' → single-page; 'auto-dual' → spread;
-   * 'auto-switch' → single (we don't yet switch on orientation).
-   */
+
   public readonly layout = computed<'single' | 'double'>(() => {
     const layout: PageLayout = this.settings.settings().display.pageLayout;
     if (layout === 'auto-dual') return 'double';
     return 'single';
   });
 
-  /** Current zoom mode. Passed to the lib on mount; v1 doesn't differentiate
-   *  the modes visually yet (the page-flip renderer always stretches to the
-   *  host), but the value is persisted and a remount fires on change so
-   *  the wiring is in place for the v2 native renderer. */
   public readonly zoom = computed<ZoomMode>(() => this.settings.settings().display.zoom);
 
   constructor() {
-    // Remount the flip instance whenever the book OR layout changes.
     effect(() => {
       const book = this.book();
       const layout = this.layout();
       const zoom = this.zoom();
       if (book === null) return;
-      // Read the host element; if the view isn't initialized yet, skip —
-      // ngAfterViewInit will handle the initial mount.
       const host = this.hostRef()?.nativeElement;
       if (host === undefined) return;
       this.flip.mount(host, book, layout, zoom);
     });
-
-    // Gate the lib's curl gesture: only when zoom is 1 AND the magnifier
-    // isn't holding the pointer. Either condition disqualifies the curl
-    // (zoom > 1: corners off-screen; magnifier active: same pointer that
-    // would otherwise drive the curl is being used for the loupe).
-    effect(() => {
-      const flipOk = this.bookstore.cornersVisible() && !this.magnifierState.active();
-      this.flip.setFlippingEnabled(flipOk);
-    });
   }
 
   public ngAfterViewInit(): void {
-    // First mount — the effect above may have already run with `host`
-    // still undefined. Do it again now that the view exists.
     const book = this.book();
     if (book === null) return;
     const host = this.hostRef().nativeElement;
@@ -112,7 +80,6 @@ export class BookSpreadComponent implements AfterViewInit, OnDestroy {
     this.flip.unmount();
   }
 
-  /** Tell the lib the container resized. */
   @HostListener('window:resize')
   public onResize(): void {
     this.flip.update();

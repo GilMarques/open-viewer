@@ -1,23 +1,42 @@
 import { Injectable, signal } from '@angular/core';
 
 /**
- * Tiny shared store for the magnifier's "active" state.
+ * Shared magnifier / pointer-gesture state.
  *
- * Owned (written) by the viewer page — it owns the pointer-event pipeline
- * and the hold-delay timer. Read by the book-spread component so it can
- * gate page-flip's curl gesture off while the loupe is showing (the
- * gesture and the loupe both want to react to the same pointerdown).
- *
- * Keeping this in its own service avoids the viewer having to template-
- * bind a signal into the spread's inputs, and avoids putting viewer-only
- * UX state on BookstoreService.
+ * Written by the viewer page (pointer pipeline + hold timer).
+ * The viewer uses `relayFlip` to hand a drag off to page-flip once slop
+ * is exceeded; while holding (before loupe or relay) page-flip must stay idle.
  */
 @Injectable({ providedIn: 'root' })
 export class MagnifierStateService {
+  /** Pointer is down on `.stage` (hold window or loupe). */
+  private readonly _holding = signal(false);
+  public readonly holding = this._holding.asReadonly();
+
+  /** Loupe is visible (hold timer elapsed). */
   private readonly _active = signal(false);
   public readonly active = this._active.asReadonly();
 
+  /** Drag exceeded slop — viewer relays to page-flip instead of magnifier. */
+  private readonly _relayFlip = signal(false);
+  public readonly relayFlip = this._relayFlip.asReadonly();
+
+  public setHolding(value: boolean): void {
+    this._holding.set(value);
+  }
+
   public setActive(value: boolean): void {
     this._active.set(value);
+  }
+
+  public setRelayFlip(value: boolean): void {
+    this._relayFlip.set(value);
+  }
+
+  /** Reset all gesture flags (pointer up, blur, visibility change). */
+  public endGesture(): void {
+    this._holding.set(false);
+    this._active.set(false);
+    this._relayFlip.set(false);
   }
 }

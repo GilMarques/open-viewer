@@ -13,9 +13,8 @@ import {
  *     (hostRect) and the pointer's viewport coords (pointerX/Y).
  *   - The pointer's fractional position inside the stage maps to the
  *     page image's natural pixel coords.
- *   - We render a square snippet of the page (side = SIZE_PX viewport
- *     pixels) inside a fixed-position div at the corner OPPOSITE the
- *     pointer — see `placement()`.
+ *   - We render a square snippet (~22% of the smaller viewport axis)
+ *     inside a fixed-position div at the corner OPPOSITE the pointer.
  *   - Background-image is the page URL, sized 1:1 to the natural
  *     dimensions, then transformed by the user's magnifierZoom.
  *     background-position offsets so the pixel under the pointer lands
@@ -40,6 +39,8 @@ import {
         [style.background-image]="backgroundImage()"
         [style.background-size.px]="backgroundSize()"
         [style.background-position]="backgroundPosition()"
+        [style.width.px]="loupeSizePx()"
+        [style.height.px]="loupeSizePx()"
         [style.transform]="'scale(' + zoom() + ')'"
         [style.transformOrigin]="transformOrigin()"
         aria-hidden="true"
@@ -56,19 +57,15 @@ import {
       }
       .loupe {
         position: absolute;
-        width: 160px;
-        height: 160px;
-        border: 2px solid var(--ion-color-primary, #3880ff);
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
         background-repeat: no-repeat;
         background-color: #000;
-        /* Centre the inner zoomed content inside the 160x160 frame. */
         transform-origin: center center;
       }
-      .loupe.tl { top: 16px; left: 16px; }
-      .loupe.tr { top: 16px; right: 16px; }
-      .loupe.bl { bottom: 16px; left: 16px; }
-      .loupe.br { bottom: 16px; right: 16px; }
+      .loupe.tl { top: 3vmin; left: 3vmin; }
+      .loupe.tr { top: 3vmin; right: 3vmin; }
+      .loupe.bl { bottom: 3vmin; left: 3vmin; }
+      .loupe.br { bottom: 3vmin; right: 3vmin; }
     `,
   ],
 })
@@ -95,9 +92,19 @@ export class MagnifierComponent {
   /** Magnification factor from settings. 1 = no zoom. */
   public readonly zoom = input<number>(1);
 
-  /** Viewport size (used for placement decisions). */
+  /** Viewport size (used for placement and loupe sizing). */
   public readonly viewportWidth = input<number>(0);
   public readonly viewportHeight = input<number>(0);
+
+  /** Loupe window side length — ~22% of the smaller viewport axis. */
+  private static readonly LOUPE_VIEWPORT_FRACTION = 0.22;
+
+  public readonly loupeSizePx = computed(() => {
+    const vw = this.viewportWidth();
+    const vh = this.viewportHeight();
+    if (vw === 0 || vh === 0) return 160;
+    return Math.round(Math.min(vw, vh) * MagnifierComponent.LOUPE_VIEWPORT_FRACTION);
+  });
 
   public readonly visible = computed(() => {
     if (!this.active()) return false;
@@ -151,16 +158,13 @@ export class MagnifierComponent {
     if (frac === null) return 0;
     const nw = this.naturalWidth();
     const nh = this.naturalHeight();
-    // Average dimension scaled by zoom, then by the ratio between stage
-    // and natural size. We use the bigger of (nw/nh) * height vs width
-    // to pick whichever axis the page stretches along.
     return Math.max(nw, nh) * this.zoom();
   });
 
   /**
    * CSS background-position offsets (x, y) in CSS pixels. Computed so
    * that the pixel currently under the pointer lands at the centre of
-   * the 160x160 loupe window.
+   * the loupe window.
    */
   public readonly backgroundPosition = computed<string>(() => {
     const frac = this.pointerFraction();
@@ -168,21 +172,14 @@ export class MagnifierComponent {
     const nw = this.naturalWidth();
     const nh = this.naturalHeight();
     const bgSize = this.backgroundSize();
-    // Source-pixel coords under the pointer.
+    const half = this.loupeSizePx() / 2;
     const srcX = frac.fx * nw;
     const srcY = frac.fy * nh;
-    // Scale to background-image space.
     const bgX = srcX * (bgSize / nw);
     const bgY = srcY * (bgSize / nh);
-    // Centre the snippet on the pointer (loupe is 160x160).
-    return `${-bgX + 80}px ${-bgY + 80}px`;
+    return `${-bgX + half}px ${-bgY + half}px`;
   });
 
-  /**
-   * transform-origin is fixed to center; the inner CSS `transform: scale`
-   * is what applies the user's zoom on top of the 1:1 source. We expose
-   * it as a function so the consumer could animate later.
-   */
   public transformOrigin(): string {
     return 'center center';
   }

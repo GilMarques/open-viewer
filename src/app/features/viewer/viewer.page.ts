@@ -13,37 +13,27 @@ import { IonContent, IonIcon } from '@ionic/angular/standalone';
 
 import { buildKingdomSample } from '../../core/debug/sample-books';
 import type { FilterSettings } from '../../core/models/settings.model';
-import { SettingsService } from '../../core/services/settings.service';
+import { BookFlipService } from '../../core/services/book-flip.service';
 import { BookstoreService } from '../../core/services/bookstore.service';
 import { MagnifierStateService } from '../../core/services/magnifier-state.service';
+import { SettingsService } from '../../core/services/settings.service';
 import { BookSpreadComponent } from './book-spread.component';
-import { QuickActionsModalComponent } from './quick-actions-modal.component';
 import { MagnifierComponent } from './magnifier.component';
+import { QuickActionsModalComponent } from './quick-actions-modal.component';
 
 /**
  * v1 Viewer: headerless, full-bleed book spread with a small, transparent,
  * centered-top floating button that opens a tabbed quick-actions modal.
  *
- * Settings application:
- *  - Theme is applied at the document level by AppComponent (so every
- *    page inherits it; not just the Viewer).
- *  - Reading direction is bound to the host `[dir]` attribute.
- *  - Filters are exposed as a CSS `filter` string the template binds to
- *    the spread host wrapper.
- *  - Page transition is stored but inert until the bottom-sheet lands.
- *
  * Page rendering:
- *  - <ov-book-spread> mounts a `page-flip` instance. The lib draws the
- *    curl effect over our page images; we own layout, gating, and zoom.
- *  - Desktop wheel zoom: when zoom > 1 the curl gesture is auto-disabled
- *    (BookFlipService.setFlippingEnabled(false)), preventing the user
- *    from grabbing a corner that's off-screen.
+ *  - <ov-book-spread> mounts page-flip with `useMouseEvents: false`.
+ *  - The viewer `.stage` relays pointer events for page turns via
+ *    BookFlipService.relayPointerDown/Move/Up and relayTap.
+ *  - When zoom > 1, relay is skipped (`bookstore.cornersVisible()`).
  *
  * Magnifier:
- *  - Pointerdown on .stage shows the loupe at the opposite screen corner.
- *  - The loupe samples the current page's source image (not the rendered
- *    canvas), so it stays correct through page-flip's transforms.
- *  - Magnification factor is read live from settings (Preferences page).
+ *  - Hold on `.stage` for 300ms shows the loupe at the opposite corner.
+ *  - Drag beyond slop during the hold window relays to page-flip instead.
  */
 @Component({
   selector: 'ov-viewer',
@@ -60,6 +50,7 @@ export class ViewerPage {
   private readonly bookstore = inject(BookstoreService);
   private readonly settings = inject(SettingsService);
   private readonly magnifierState = inject(MagnifierStateService);
+  private readonly flip = inject(BookFlipService);
 
   /** Open book, or null. Bound to the spread component. */
   public readonly openBook = computed(() => this.bookstore.state().book);
@@ -67,9 +58,7 @@ export class ViewerPage {
   /** CSS `filter` string applied to the spread wrapper. */
   public readonly canvasFilter = computed(() => buildFilterString(this.settings.settings().filters));
 
-  /** CSS `image-rendering` for the spread — driven by image-smooth setting.
-   *  Only nearest-neighbor and bilinear/auto are CSS-mappable today; the
-   *  other enum values are stored but inert until a WebGL filter lands. */
+  /** CSS `image-rendering` for the spread — driven by image-smooth setting. */
   public readonly imageRendering = computed(() => {
     const sm = this.settings.settings().filters.imageSmooth;
     if (!sm.enabled) return 'auto';
@@ -95,8 +84,7 @@ export class ViewerPage {
   /** Reference to the stage element (.stage) for rect queries. */
   private readonly stageRef = viewChild<ElementRef<HTMLDivElement>>('stage');
 
-  /** Live magnifier-active flag, shared with the book-spread so it can
-   *  gate the page-flip curl gesture while the loupe is up. */
+  /** Live loupe-visible flag for the template. */
   public readonly magnifierActive = this.magnifierState.active;
 
   /** Pointer X/Y in viewport coords. */
@@ -126,17 +114,12 @@ export class ViewerPage {
   public readonly naturalSize = signal<{ width: number; height: number } | null>(null);
 
   constructor() {
-    // v1: open the sample book on first entry. Remove once Bookshelf
-    // can hand us a real book via routing.
     effect(() => {
       if (this.bookstore.state().book === null) {
         this.bookstore.openBook(buildKingdomSample());
       }
     });
 
-    // Preload the current page image to learn its natural dimensions.
-    // Recomputed whenever the page URL changes. The image is held in
-    // memory only — we don't render it, just probe its size.
     effect(() => {
       const url = this.currentPageUrl();
       if (url === null) {
@@ -162,42 +145,30 @@ export class ViewerPage {
     this._quickActionsOpen.set(false);
   }
 
-  /**
-   * Desktop-only wheel zoom. Ctrl+wheel = zoom (trackpad pinch is also
-   * delivered as wheel+ctrlKey on macOS). Plain wheel is left to the
-   * browser so vertical-scroll mode can use it.
-   *
-   * `preventDefault()` stops the page from scrolling underneath.
-   */
   @HostListener('wheel', ['$event'])
   public onWheel(event: WheelEvent): void {
     if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
-    // Negative deltaY = zoom in (wheel rolled up). Map to multiplicative factor.
     const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
     this.bookstore.setZoom(factor);
   }
 
-  // ──────────── Magnifier pointer handlers ────────────
+  // ──────────── Magnifier + page-flip pointer relay ────────────
 
-  /** Hold duration before the loupe appears. Matches the Android long-press
-   *  convention so a quick tap or scroll gesture never triggers it. */
   private static readonly HOLD_MS = 300;
-  /** Movement (in CSS px) within the hold window that still counts as a
-   *  hold. Beyond this we treat the gesture as a drag and bail out. */
   private static readonly HOLD_SLOP_PX = 8;
 
-  /** setTimeout handle for the hold-delay activation. Cleared on move/up. */
   private holdTimer: number | null = null;
-  /** Pointer position when the hold started — used for the slop check. */
   private holdStartX = 0;
   private holdStartY = 0;
 
   public onStagePointerDown(event: PointerEvent): void {
-    // Only main button (mouse left, single-finger touch, pen).
     if (event.button !== 0) return;
     const stage = this.stageRef()?.nativeElement;
     if (stage === undefined) return;
+
+    this.magnifierState.setHolding(true);
+
     const rect = stage.getBoundingClientRect();
     this._hostRect.set(rect);
     this._viewportWidth.set(window.innerWidth);
@@ -211,35 +182,59 @@ export class ViewerPage {
       this.holdTimer = null;
       this.magnifierState.setActive(true);
     }, ViewerPage.HOLD_MS);
-    // Capture the pointer so we keep getting move/up events even if the
-    // user drags off the stage. releasePointerCapture fires automatically
-    // on pointerup / pointercancel.
+
     try {
-      (event.target as Element | null)?.setPointerCapture?.(event.pointerId);
+      stage.setPointerCapture(event.pointerId);
     } catch {
-      // Some targets (e.g. canvas) reject capture. Best-effort.
+      // Best-effort — some browsers reject capture.
     }
   }
 
   public onStagePointerMove(event: PointerEvent): void {
+    if (this.magnifierState.relayFlip()) {
+      if (this.bookstore.cornersVisible()) {
+        this.flip.relayPointerMove(event.clientX, event.clientY);
+      }
+      return;
+    }
+
     if (this.magnifierState.active()) {
       this.pointerX.set(event.clientX);
       this.pointerY.set(event.clientY);
       return;
     }
-    // Still in the hold window — cancel if the user has moved too far.
+
     if (this.holdTimer !== null) {
       const dx = event.clientX - this.holdStartX;
       const dy = event.clientY - this.holdStartY;
       if (dx * dx + dy * dy > ViewerPage.HOLD_SLOP_PX * ViewerPage.HOLD_SLOP_PX) {
-        this.clearHoldTimer();
+        this.beginFlipRelay();
+        if (this.bookstore.cornersVisible()) {
+          this.flip.relayPointerMove(event.clientX, event.clientY);
+        }
       }
     }
   }
 
-  public onStagePointerUp(): void {
+  public onStagePointerUp(event: PointerEvent): void {
+    if (this.magnifierState.relayFlip()) {
+      if (this.bookstore.cornersVisible()) {
+        this.flip.relayPointerUp(event.clientX, event.clientY);
+      }
+    } else if (!this.magnifierState.active() && this.bookstore.cornersVisible()) {
+      this.flip.relayTap(event.clientX, event.clientY);
+    }
+
     this.clearHoldTimer();
-    this.magnifierState.setActive(false);
+    this.magnifierState.endGesture();
+  }
+
+  private beginFlipRelay(): void {
+    this.clearHoldTimer();
+    this.magnifierState.setRelayFlip(true);
+    if (this.bookstore.cornersVisible()) {
+      this.flip.relayPointerDown(this.holdStartX, this.holdStartY);
+    }
   }
 
   private clearHoldTimer(): void {
@@ -248,19 +243,18 @@ export class ViewerPage {
       this.holdTimer = null;
     }
   }
-  /**
-   * Cancel the magnifier on window blur (alt-tab) or visibility change
-   * so it doesn't get stuck visible after the user leaves.
-   */
+
   @HostListener('window:blur')
   public onWindowBlur(): void {
-    this.magnifierState.setActive(false);
+    this.clearHoldTimer();
+    this.magnifierState.endGesture();
   }
 
   @HostListener('document:visibilitychange')
   public onVisibilityChange(): void {
     if (document.hidden) {
-      this.magnifierState.setActive(false);
+      this.clearHoldTimer();
+      this.magnifierState.endGesture();
     }
   }
 }
@@ -284,9 +278,6 @@ function buildFilterString(filters: FilterSettings): string {
   if (filters.sepia.enabled && filters.sepia.value > 0) {
     parts.push(`sepia(${filters.sepia.value}%)`);
   }
-  // Sharpen: CSS has no native sharpen filter. Approximate by boosting
-  // contrast, since high-contrast edges read as "sharper". Coarse but
-  // honest about the limitation — true unsharp-mask needs WebGL.
   if (filters.sharpen.enabled && filters.sharpen.value > 0) {
     const boost = 100 + filters.sharpen.value * 10;
     parts.push(`contrast(${boost.toFixed(0)}%)`);
@@ -294,9 +285,6 @@ function buildFilterString(filters: FilterSettings): string {
   if (filters.blur.enabled && filters.blur.value > 0) {
     parts.push(`blur(${filters.blur.value}px)`);
   }
-  // Grain: no CSS noise filter. Approximate via brightness jitter so the
-  // user sees the slider do *something*. Replace with a WebGL pass when
-  // the image-renderer plugin lands.
   if (filters.grain.enabled && filters.grain.value > 0) {
     const jitter = 100 - filters.grain.value / 2;
     parts.push(`brightness(${jitter.toFixed(0)}%)`);
