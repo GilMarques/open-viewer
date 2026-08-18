@@ -99,9 +99,6 @@ const SMOOTH_OPTIONS: readonly SmoothOption[] = [
             <h3>{{ row.label }}</h3>
             <ion-note>
               {{ getValue(row.key) }}{{ row.suffix }}
-              @if (!getEnabled(row.key)) {
-                &nbsp;(disabled)
-              }
             </ion-note>
           </ion-label>
         </ion-item>
@@ -137,9 +134,6 @@ const SMOOTH_OPTIONS: readonly SmoothOption[] = [
           <h3>Image smooth</h3>
           <ion-note>
             {{ imageSmoothLabel() }}
-            @if (!imageSmoothEnabled()) {
-              &nbsp;(disabled)
-            }
           </ion-note>
         </ion-label>
         <ion-select
