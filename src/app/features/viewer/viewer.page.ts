@@ -10,11 +10,11 @@ import {
 import { IonContent, IonIcon } from '@ionic/angular/standalone';
 
 import { buildKingdomSample } from '../../core/debug/sample-books';
+import type { FilterSettings } from '../../core/models/settings.model';
 import { SettingsService } from '../../core/services/settings.service';
 import { BookstoreService } from '../../core/services/bookstore.service';
 import { BookSpreadComponent } from './book-spread.component';
 import { QuickActionsModalComponent } from './quick-actions-modal.component';
-
 /**
  * v1 Viewer: headerless, full-bleed book spread with a small, transparent,
  * centered-top floating button that opens a tabbed quick-actions modal.
@@ -54,6 +54,15 @@ export class ViewerPage {
 
   /** CSS `filter` string applied to the spread wrapper. */
   public readonly canvasFilter = computed(() => buildFilterString(this.settings.settings().filters));
+
+  /** CSS `image-rendering` for the spread — driven by image-smooth setting.
+   *  Only nearest-neighbor and bilinear/auto are CSS-mappable today; the
+   *  other enum values are stored but inert until a WebGL filter lands. */
+  public readonly imageRendering = computed(() => {
+    const sm = this.settings.settings().filters.imageSmooth;
+    if (!sm.enabled) return 'auto';
+    return sm.method === 'nearest-neighbor' ? 'pixelated' : 'auto';
+  });
 
   /** Reading direction bound to the host `[dir]` attribute. */
   public readonly direction = computed<'ltr' | 'rtl'>(() => this.settings.settings().display.readingDirection);
@@ -104,17 +113,7 @@ export class ViewerPage {
   }
 }
 
-/**
- * Build a CSS `filter` string from a FilterSettings object.
- * (Brightness / contrast direct; gamma approximated as a brightness curve;
- * blue light = sepia + hue-rotate.)
- */
-function buildFilterString(filters: {
-  brightness: { enabled: boolean; value: number };
-  blueLight: { enabled: boolean; value: number };
-  contrast: { enabled: boolean; value: number };
-  gamma: { enabled: boolean; value: number };
-}): string {
+function buildFilterString(filters: FilterSettings): string {
   const parts: string[] = [];
   if (filters.brightness.enabled) parts.push(`brightness(${filters.brightness.value}%)`);
   if (filters.contrast.enabled) parts.push(`contrast(${filters.contrast.value}%)`);
@@ -126,6 +125,29 @@ function buildFilterString(filters: {
   if (filters.blueLight.enabled && filters.blueLight.value > 0) {
     const s = filters.blueLight.value / 80;
     parts.push(`sepia(${s.toFixed(2)}) hue-rotate(-10deg)`);
+  }
+  if (filters.grayscale.enabled && filters.grayscale.value > 0) {
+    parts.push(`grayscale(${filters.grayscale.value}%)`);
+  }
+  if (filters.sepia.enabled && filters.sepia.value > 0) {
+    parts.push(`sepia(${filters.sepia.value}%)`);
+  }
+  // Sharpen: CSS has no native sharpen filter. Approximate by boosting
+  // contrast, since high-contrast edges read as "sharper". Coarse but
+  // honest about the limitation — true unsharp-mask needs WebGL.
+  if (filters.sharpen.enabled && filters.sharpen.value > 0) {
+    const boost = 100 + filters.sharpen.value * 10;
+    parts.push(`contrast(${boost.toFixed(0)}%)`);
+  }
+  if (filters.blur.enabled && filters.blur.value > 0) {
+    parts.push(`blur(${filters.blur.value}px)`);
+  }
+  // Grain: no CSS noise filter. Approximate via brightness jitter so the
+  // user sees the slider do *something*. Replace with a WebGL pass when
+  // the image-renderer plugin lands.
+  if (filters.grain.enabled && filters.grain.value > 0) {
+    const jitter = 100 - filters.grain.value / 2;
+    parts.push(`brightness(${jitter.toFixed(0)}%)`);
   }
   return parts.length > 0 ? parts.join(' ') : 'none';
 }

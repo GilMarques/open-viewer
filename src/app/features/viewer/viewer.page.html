@@ -1,5 +1,5 @@
 <ion-content [scrollY]="false">
-  <div class="stage" [style.filter]="canvasFilter()">
+  <div class="stage" [style.filter]="canvasFilter()" [style.image-rendering]="imageRendering()">
     <ov-book-spread [book]="openBook()" />
   </div>
 

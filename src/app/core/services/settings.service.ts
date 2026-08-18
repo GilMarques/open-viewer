@@ -5,8 +5,10 @@ import {
   FILTER_BOUNDS,
   type AppSettings,
   type DisplaySettings,
+  type FilterMethod,
   type FilterSettings,
   type FilterSlider,
+  type ImageSmoothMethod,
   type InterfaceTheme,
   type PageLayout,
   type PageTransition,
@@ -73,12 +75,22 @@ export class SettingsService {
     enabled: boolean,
     value: number,
   ): void {
-    const bounds = FILTER_BOUNDS[key];
+    // Image-smooth is a method, not a slider — refuse to write into it here.
+    const bounds = FILTER_BOUNDS[key as Exclude<keyof FilterSettings, 'imageSmooth'>];
+    if (bounds === undefined) return;
     const clamped = Math.min(bounds.max, Math.max(bounds.min, value));
     const next: FilterSlider = { enabled, value: clamped };
     this._settings.update((s) => ({
       ...s,
       filters: { ...s.filters, [key]: next },
+    }));
+  }
+
+  /** Image smooth takes a discrete sampling method, not a number. */
+  public setImageSmooth(enabled: boolean, method: ImageSmoothMethod): void {
+    this._settings.update((s) => ({
+      ...s,
+      filters: { ...s.filters, imageSmooth: { enabled, method } },
     }));
   }
 
@@ -138,6 +150,12 @@ export class SettingsService {
       blueLight: this.pickFilter(f['blueLight'], fallback.filters.blueLight, FILTER_BOUNDS.blueLight),
       contrast: this.pickFilter(f['contrast'], fallback.filters.contrast, FILTER_BOUNDS.contrast),
       gamma: this.pickFilter(f['gamma'], fallback.filters.gamma, FILTER_BOUNDS.gamma),
+      grayscale: this.pickFilter(f['grayscale'], fallback.filters.grayscale, FILTER_BOUNDS.grayscale),
+      sepia: this.pickFilter(f['sepia'], fallback.filters.sepia, FILTER_BOUNDS.sepia),
+      sharpen: this.pickFilter(f['sharpen'], fallback.filters.sharpen, FILTER_BOUNDS.sharpen),
+      blur: this.pickFilter(f['blur'], fallback.filters.blur, FILTER_BOUNDS.blur),
+      grain: this.pickFilter(f['grain'], fallback.filters.grain, FILTER_BOUNDS.grain),
+      imageSmooth: this.pickFilterMethod(f['imageSmooth'], fallback.filters.imageSmooth),
     };
 
     return { display, filters };
@@ -165,6 +183,20 @@ export class SettingsService {
       value: typeof r.value === 'number'
         ? Math.min(bounds.max, Math.max(bounds.min, r.value))
         : fallback.value,
+    };
+  }
+
+  private pickFilterMethod(raw: unknown, fallback: FilterMethod): FilterMethod {
+    if (typeof raw !== 'object' || raw === null) return fallback;
+    const r = raw as { enabled?: unknown; method?: unknown };
+    const method = this.pickEnum(
+      r.method,
+      ['nearest-neighbor', 'averaging', 'bilinear', 'bicubic', 'lanczos3'],
+      fallback.method,
+    );
+    return {
+      enabled: typeof r.enabled === 'boolean' ? r.enabled : fallback.enabled,
+      method,
     };
   }
 }

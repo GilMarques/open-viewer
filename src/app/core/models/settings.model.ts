@@ -32,11 +32,31 @@ export type ViewerMode = 'paged' | 'vertical-scroll' | 'horizontal-scroll';
 
 export type PageTransition = 'none' | 'slide-horizontal' | 'slide-vertical' | 'page-curl';
 
-/** A numeric setting + an enabled flag. Used for all Filters tab sliders. */
+/**
+ * Sampling method for image upscaling/downscaling. Mapped to CSS
+ * `image-rendering` where the browser supports it; higher-quality
+ * entries (bicubic, lanczos3) are stored but inert until a WebGL
+ * filter lands — only nearest-neighbor visibly differs today.
+ */
+export type ImageSmoothMethod =
+  | 'nearest-neighbor'
+  | 'averaging'
+  | 'bilinear'
+  | 'bicubic'
+  | 'lanczos3';
+
+/** A numeric setting + an enabled flag. Used for all slider Filters. */
 export interface FilterSlider {
   readonly enabled: boolean;
   /** Value in the setting's natural unit (%, multiplier, etc.). */
   readonly value: number;
+}
+
+/** Discrete-method setting + an enabled flag. Image smooth is the only
+ *  filter that takes an enum (sampling method) instead of a number. */
+export interface FilterMethod {
+  readonly enabled: boolean;
+  readonly method: ImageSmoothMethod;
 }
 
 export interface DisplaySettings {
@@ -53,6 +73,12 @@ export interface FilterSettings {
   readonly blueLight: FilterSlider;
   readonly contrast: FilterSlider;
   readonly gamma: FilterSlider;
+  readonly grayscale: FilterSlider;
+  readonly sepia: FilterSlider;
+  readonly sharpen: FilterSlider;
+  readonly blur: FilterSlider;
+  readonly grain: FilterSlider;
+  readonly imageSmooth: FilterMethod;
 }
 
 export interface AppSettings {
@@ -75,6 +101,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
     blueLight: { enabled: false, value: 0 },
     contrast: { enabled: false, value: 100 },
     gamma: { enabled: false, value: 1.0 },
+    grayscale: { enabled: false, value: 0 },
+    sepia: { enabled: false, value: 0 },
+    sharpen: { enabled: false, value: 0 },
+    blur: { enabled: false, value: 0 },
+    grain: { enabled: false, value: 0 },
+    imageSmooth: { enabled: false, method: 'bilinear' },
   },
 };
 
@@ -84,4 +116,12 @@ export const FILTER_BOUNDS = {
   blueLight: { min: 0, max: 80, step: 5 },
   contrast: { min: 25, max: 200, step: 5 },
   gamma: { min: 0.5, max: 2.5, step: 0.1 },
-} as const satisfies Record<keyof FilterSettings, { min: number; max: number; step: number }>;
+  grayscale: { min: 0, max: 100, step: 5 },
+  sepia: { min: 0, max: 100, step: 5 },
+  sharpen: { min: 0, max: 10, step: 0.5 },
+  blur: { min: 0, max: 20, step: 1 },
+  grain: { min: 0, max: 100, step: 5 },
+} as const satisfies Record<
+  Exclude<keyof FilterSettings, 'imageSmooth'>,
+  { min: number; max: number; step: number }
+>;
