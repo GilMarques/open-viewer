@@ -1,16 +1,18 @@
-.placeholder {
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 48px 24px;
-  text-align: center;
-  opacity: 0.7;
+:host {
+  display: block;
+  height: 100%;
+}
 
-  h2 {
-    margin: 0 0 8px;
-    font-weight: 600;
-  }
+ion-content {
+  --background: #111;
+}
 
-  p {
-    margin: 0;
-  }
+ion-content::part(scroll) {
+  display: flex;
+}
+
+ov-page-canvas {
+  flex: 1 1 auto;
+  display: block;
+  min-height: 0;
 }

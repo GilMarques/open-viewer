@@ -3,13 +3,18 @@
     <ion-buttons slot="start">
       <ion-menu-button></ion-menu-button>
     </ion-buttons>
-    <ion-title>Viewer</ion-title>
+    <ion-title>{{ progress() || 'Viewer' }}</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="prev()" [disabled]="!hasPrev()">
+        <ion-icon slot="icon-only" ios="chevron-back-outline" md="chevron-back-sharp"></ion-icon>
+      </ion-button>
+      <ion-button (click)="next()" [disabled]="!hasNext()">
+        <ion-icon slot="icon-only" ios="chevron-forward-outline" md="chevron-forward-sharp"></ion-icon>
+      </ion-button>
+    </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
-<ion-content>
-  <div class="placeholder">
-    <h2>Viewer</h2>
-    <p>Pick a book from the Bookshelf or File Browser to start reading.</p>
-  </div>
+<ion-content [scrollY]="false">
+  <ov-page-canvas [page]="page()" />
 </ion-content>
