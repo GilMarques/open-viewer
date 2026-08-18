@@ -5,19 +5,19 @@ import {
   inject,
 } from '@angular/core';
 import {
+  IonIcon,
   IonItem,
   IonLabel,
   IonList,
-  IonNote,
   IonSelect,
   IonSelectOption,
-  IonToggle,
 } from '@ionic/angular/standalone';
 
 import type {
   InterfaceTheme,
   PageLayout,
   PageTransition,
+  ReadingDirection,
   ScreenOrientation,
   ViewerMode,
 } from '../../core/models/settings.model';
@@ -47,11 +47,15 @@ const VIEWER_MODE_OPTIONS: readonly Option<ViewerMode>[] = [
   { value: 'horizontal-scroll', label: 'Horizontal scroll' },
 ];
 
+/**
+ * Page-curl sits first in the popover so users see what's coming; "None"
+ * sits last because it's the boring default once the real effects exist.
+ */
 const PAGE_TRANSITION_OPTIONS: readonly Option<PageTransition>[] = [
-  { value: 'none', label: 'None' },
+  { value: 'page-curl', label: 'Page curl' },
   { value: 'slide-horizontal', label: 'Slide left/right' },
   { value: 'slide-vertical', label: 'Slide up/down' },
-  { value: 'page-curl', label: 'Page curl (soon)' },
+  { value: 'none', label: 'None' },
 ];
 
 const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
@@ -61,6 +65,11 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
   { value: 'portrait-inverted', label: 'Portrait (inverted)' },
   { value: 'landscape-inverted', label: 'Landscape (inverted)' },
   { value: 'default', label: 'Default' },
+];
+
+const READING_DIRECTION_OPTIONS: readonly Option<ReadingDirection>[] = [
+  { value: 'ltr', label: 'Left → right' },
+  { value: 'rtl', label: 'Right → left' },
 ];
 
 /**
@@ -75,42 +84,42 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    IonIcon,
     IonItem,
     IonLabel,
     IonList,
-    IonNote,
     IonSelect,
     IonSelectOption,
-    IonToggle,
   ],
   template: `
     <ion-list lines="full" class="settings-list">
-      <ion-item class="reading-direction-row">
-        <ion-note
+      <ion-item>
+        <ion-icon
+          aria-hidden="true"
           slot="start"
-          class="direction-label"
-          [class.is-active]="!isRtl()"
-          aria-hidden="true"
-        >
-          Left → right
-        </ion-note>
-        <ion-label class="ion-text-nowrap">Reading direction</ion-label>
-        <ion-toggle
-          [checked]="isRtl()"
+          ios="swap-horizontal-outline"
+          md="swap-horizontal-sharp"
+        ></ion-icon>
+        <ion-label>Reading direction</ion-label>
+        <ion-select
+          [value]="readingDirection()"
           (ionChange)="onReadingDirectionChange($event)"
-          aria-label="Toggle reading direction"
-        ></ion-toggle>
-        <ion-note
-          slot="end"
-          class="direction-label"
-          [class.is-active]="isRtl()"
-          aria-hidden="true"
+          interface="popover"
+          aria-label="Reading direction"
         >
-          Right → left
-        </ion-note>
+          @for (opt of readingDirections; track opt.value) {
+            <ion-select-option [value]="opt.value">{{ opt.label }}</ion-select-option>
+          }
+        </ion-select>
       </ion-item>
 
       <ion-item>
+        <ion-icon
+          aria-hidden="true"
+          slot="start"
+          ios="phone-portrait-outline"
+          md="phone-portrait-sharp"
+        ></ion-icon>
         <ion-label>Screen orientation</ion-label>
         <ion-select
           [value]="orientation()"
@@ -125,6 +134,12 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
       </ion-item>
 
       <ion-item>
+        <ion-icon
+          aria-hidden="true"
+          slot="start"
+          ios="book-outline"
+          md="book-sharp"
+        ></ion-icon>
         <ion-label>Page layout</ion-label>
         <ion-select
           [value]="pageLayout()"
@@ -139,6 +154,12 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
       </ion-item>
 
       <ion-item>
+        <ion-icon
+          aria-hidden="true"
+          slot="start"
+          ios="contrast-outline"
+          md="contrast-sharp"
+        ></ion-icon>
         <ion-label>Interface theme</ion-label>
         <ion-select
           [value]="theme()"
@@ -153,6 +174,12 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
       </ion-item>
 
       <ion-item>
+        <ion-icon
+          aria-hidden="true"
+          slot="start"
+          ios="albums-outline"
+          md="albums-sharp"
+        ></ion-icon>
         <ion-label>Viewer mode</ion-label>
         <ion-select
           [value]="viewerMode()"
@@ -167,6 +194,12 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
       </ion-item>
 
       <ion-item>
+        <ion-icon
+          aria-hidden="true"
+          slot="start"
+          ios="refresh-outline"
+          md="refresh-sharp"
+        ></ion-icon>
         <ion-label>Page transition effect</ion-label>
         <ion-select
           [value]="pageTransition()"
@@ -186,19 +219,9 @@ const ORIENTATION_OPTIONS: readonly Option<ScreenOrientation>[] = [
       .settings-list {
         padding-top: 8px;
       }
-      .reading-direction-row {
-        --inner-padding-end: 0;
-      }
-      .direction-label {
-        font-size: 12px;
-        opacity: 0.45;
-        transition: opacity 120ms ease;
-        max-width: 96px;
-      }
-      .direction-label.is-active {
-        opacity: 1;
-        font-weight: 600;
-        color: var(--ion-color-primary);
+      ion-item ion-icon[slot='start'] {
+        color: var(--ion-color-medium);
+        font-size: 22px;
       }
     `,
   ],
@@ -211,6 +234,7 @@ export class DisplaySettingsComponent {
   public readonly viewerModes = VIEWER_MODE_OPTIONS;
   public readonly pageTransitions = PAGE_TRANSITION_OPTIONS;
   public readonly orientations = ORIENTATION_OPTIONS;
+  public readonly readingDirections = READING_DIRECTION_OPTIONS;
 
   // Bindings — read from the settings signal each cycle.
   public readonly orientation = computed(() => this.settings.settings().display.screenOrientation);
@@ -218,10 +242,11 @@ export class DisplaySettingsComponent {
   public readonly theme = computed(() => this.settings.settings().display.interfaceTheme);
   public readonly viewerMode = computed(() => this.settings.settings().display.viewerMode);
   public readonly pageTransition = computed(() => this.settings.settings().display.pageTransition);
-  public readonly isRtl = computed(() => this.settings.settings().display.readingDirection === 'rtl');
+  public readonly readingDirection = computed(() => this.settings.settings().display.readingDirection);
 
-  public onReadingDirectionChange(event: CustomEvent<{ checked: boolean }>): void {
-    this.settings.setReadingDirection(event.detail.checked ? 'rtl' : 'ltr');
+  public onReadingDirectionChange(event: CustomEvent<{ value: ReadingDirection | undefined }>): void {
+    const v = event.detail.value;
+    if (v === 'ltr' || v === 'rtl') this.settings.setReadingDirection(v);
   }
 
   public onOrientationChange(event: CustomEvent<{ value: ScreenOrientation | undefined }>): void {
@@ -232,10 +257,6 @@ export class DisplaySettingsComponent {
     if (event.detail.value !== undefined) this.settings.setPageLayout(event.detail.value);
   }
 
-  /**
-   * Theme + viewer mode are now popovers (`ion-select`), so the event
-   * shape is `{ value: T | undefined }` — same as the other dropdowns.
-   */
   public onThemeChange(event: CustomEvent<{ value: InterfaceTheme | undefined }>): void {
     const v = event.detail.value;
     if (v === 'auto' || v === 'light' || v === 'dark') this.settings.setInterfaceTheme(v);
