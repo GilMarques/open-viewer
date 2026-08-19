@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 
-import { PageFlip, type FlipSetting } from 'page-flip';
+import { PageFlip, type FlipSetting } from '../../vendor/page-flip';
 
 import type { Book } from '../models/book.model';
 import type { ZoomMode } from '../models/settings.model';
@@ -191,17 +191,7 @@ export class BookFlipService {
     this.instance.userStop(this.toBookPoint(clientX, clientY));
   }
 
-  /**
-   * Commit an active fold gesture in the requested direction. Uses the
-   * public animated flipNext/flipPrev instead of userStop so page-flip's
-   * geometric snap-back heuristic (position.x <= 0 or animate back) never
-   * decides the outcome — any started curl turns the page on release.
-   */
-  public finishFlipGesture(direction: 'next' | 'prev'): void {
-    if (this.instance === null) return;
-    if (direction === 'next') this.instance.flipNext();
-    else this.instance.flipPrev();
-  }
+
 
   /**
    * Quick tap without a preceding relayPointerDown — page-flip never saw
