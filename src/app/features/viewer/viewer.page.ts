@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { IonContent, IonIcon } from '@ionic/angular/standalone';
@@ -145,21 +146,15 @@ export class ViewerPage {
 
     const scale = this.bookstore.zoom();
     const rendered = this.renderedPageSize();
-    const pageRect = this.flip.mounted() ? this.flip.getPageElementRect() : null;
-
-    let width = 0;
-    let height = 0;
-    if (rendered !== null) {
-      width = Math.max(width, rendered.width);
-      height = Math.max(height, rendered.height);
-    }
-    if (pageRect !== null) {
-      width = Math.max(width, pageRect.width);
-      height = Math.max(height, pageRect.height);
+    if (rendered === null) {
+      return { minX: 0, maxX: 0, minY: 0, maxY: 0, overflowX: 0, overflowY: 0 };
     }
 
-    const effW = width * scale;
-    const effH = height * scale;
+    // Book size at the current zoom. (Do NOT fold the DOM canvas rect in here:
+    // it is already scaled, so it would double-count the zoom and over-bloat
+    // the pan range; it is also a side-effecting DOM read inside a computed.)
+    const effW = rendered.width * scale;
+    const effH = rendered.height * scale;
 
     // Oversized pages slide so they always cover the stage. Smaller pages
     // (zoomed out) can sit anywhere while fully visible — this keeps the
@@ -253,12 +248,19 @@ export class ViewerPage {
       img.src = url;
     });
 
+    // Recenter only on real page / fit-zoom changes. The reset body reads
+    // hostRect, naturalSize and wheel-zoom — gesture-variable signals — so
+    // wrap it in untracked() to keep those OUT of the effect's dependency
+    // set. Otherwise every pointermove re-runs this effect and clobbers the
+    // relative pan offset back to its absolute centered value.
     effect(() => {
       this.flip.currentIndex();
       this.settings.settings().display.zoom;
       this.settings.settings().display.pageLayout;
-      this.resetPan();
-      this.stopMomentum();
+      untracked(() => {
+        this.resetPan();
+        this.stopMomentum();
+      });
     });
   }
 
