@@ -9,7 +9,10 @@
     (pointerup)="onStagePointerUp($event)"
     (pointercancel)="onStagePointerUp($event)"
   >
-    <ov-book-spread [book]="openBook()" />
+    <ov-book-spread
+      [book]="openBook()"
+      [style.transform]="panTransform()"
+    />
   </div>
 
   <ov-magnifier

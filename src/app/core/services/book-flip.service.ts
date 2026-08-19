@@ -130,6 +130,16 @@ export class BookFlipService {
     this.instance?.update();
   }
 
+  /** Viewport rect of the rendered page canvas, or null when not mounted. */
+  public getPageElementRect(): DOMRect | null {
+    if (this.instance === null) return null;
+    try {
+      return this.instance.getUI().getDistElement().getBoundingClientRect();
+    } catch {
+      return null;
+    }
+  }
+
   /** Imperative nav — used by the bottom-sheet progress component. */
   public turnToPage(index: number): void {
     this.instance?.turnToPage(index);
