@@ -231,6 +231,7 @@ export class ViewerPage {
       this.settings.settings().display.zoom;
       this.settings.settings().display.pageLayout;
       this.resetPan();
+      this.stopMomentum();
     });
   }
 
@@ -255,6 +256,12 @@ export class ViewerPage {
   private static readonly HOLD_MS = 300;
   /** Horizontal slop before a drag leaves the hold window (vertical uses axis lock only). */
   private static readonly HORIZONTAL_SLOP_PX = 8;
+  /** Per-frame velocity decay while coasting after a pan release (~60fps frame). */
+  private static readonly MOMENTUM_DECAY = 0.93;
+  /** Coast stops below this px/ms velocity. */
+  private static readonly MOMENTUM_STOP_VELOCITY = 0.03;
+  /** Fling velocity cap at release (px/ms). */
+  private static readonly MOMENTUM_MAX_VELOCITY = 3;
 
   private holdTimer: number | null = null;
   private holdStartX = 0;
@@ -262,12 +269,18 @@ export class ViewerPage {
   private panBaseX = 0;
   private panBaseY = 0;
   private gestureAxis: GestureAxis | null = null;
+  /** Recent pointer samples during a pan — used to derive release velocity. */
+  private panSamples: Array<{ x: number; y: number; t: number }> = [];
+  private momentumAxis: GestureAxis | null = null;
+  private momentumVelocity = 0;
+  private momentumRaf: number | null = null;
 
   public onStagePointerDown(event: PointerEvent): void {
     if (event.button !== 0) return;
     const stage = this.stageRef()?.nativeElement;
     if (stage === undefined) return;
 
+    this.stopMomentum();
     this.magnifierState.setHolding(true);
     this.gestureAxis = null;
 
@@ -305,6 +318,7 @@ export class ViewerPage {
 
     if (this.magnifierState.relayPan()) {
       this.applyPanFromDrag(dx, dy);
+      this.recordPanSample(event.clientX, event.clientY);
       if (
         this.gestureAxis === 'horizontal' &&
         this.shouldBeginFlipRelay(dx) &&
@@ -329,13 +343,16 @@ export class ViewerPage {
   }
 
   public onStagePointerUp(event: PointerEvent): void {
+    const wasPan = this.magnifierState.relayPan();
+    const axis = this.gestureAxis;
+
     if (this.magnifierState.relayFlip()) {
       if (this.bookstore.cornersVisible()) {
         this.flip.relayPointerUp(event.clientX, event.clientY);
       }
     } else if (
       !this.magnifierState.active() &&
-      !this.magnifierState.relayPan() &&
+      !wasPan &&
       this.isQuickTap(event) &&
       this.bookstore.cornersVisible()
     ) {
@@ -345,6 +362,11 @@ export class ViewerPage {
     this.clearHoldTimer();
     this.gestureAxis = null;
     this.magnifierState.endGesture();
+
+    // Fling: keep gliding with the release velocity, decaying each frame.
+    if (wasPan && axis !== null) {
+      this.startMomentum(axis);
+    }
   }
 
   /** True when pointer release is still within the hold slop (no pan / drag). */
@@ -451,6 +473,84 @@ export class ViewerPage {
     this.magnifierState.setRelayPan(true);
   }
 
+  /** Keep a rolling window of pan positions so release velocity is smooth. */
+  private recordPanSample(x: number, y: number): void {
+    this.panSamples.push({ x, y, t: performance.now() });
+    if (this.panSamples.length > 8) this.panSamples.shift();
+  }
+
+  /**
+   * Release velocity along `axis`, px/ms. Uses the last sample against the
+   * most recent one at least 40ms earlier for stability; tiny velocities
+   * (<= 0.15 px/ms) count as a stop so micro-drift never glides.
+   */
+  private computePanVelocity(axis: GestureAxis): number {
+    const samples = this.panSamples;
+    if (samples.length < 2) return 0;
+    const last = samples[samples.length - 1];
+    let ref = samples[0];
+    for (let i = samples.length - 2; i >= 0; i--) {
+      ref = samples[i];
+      if (last.t - samples[i].t >= 40) break;
+    }
+    const dt = last.t - ref.t;
+    if (dt <= 0) return 0;
+
+    const dv = axis === 'horizontal' ? last.x - ref.x : last.y - ref.y;
+    let v = dv / dt;
+    if (Math.abs(v) < 0.15) return 0;
+    const max = ViewerPage.MOMENTUM_MAX_VELOCITY;
+    return Math.max(-max, Math.min(max, v));
+  }
+
+  /** Glide the page after a pan release, decaying velocity to a stop. */
+  private startMomentum(axis: GestureAxis): void {
+    this.stopMomentum();
+    const velocity = this.computePanVelocity(axis);
+    if (velocity === 0) return;
+
+    this.momentumAxis = axis;
+    this.momentumVelocity = velocity;
+    let last = performance.now();
+
+    const step = (now: number): void => {
+      const dt = Math.min(32, now - last);
+      last = now;
+      this.momentumVelocity *= Math.pow(ViewerPage.MOMENTUM_DECAY, dt / 16.667);
+
+      const { minX, maxX, minY, maxY } = this.panExtents();
+      if (this.momentumAxis === 'horizontal') {
+        const next = clamp(this.panOffsetX() + this.momentumVelocity * dt, minX, maxX);
+        if (next <= minX || next >= maxX) this.momentumVelocity = 0;
+        this.panOffsetX.set(next);
+      } else {
+        const next = clamp(this.panOffsetY() + this.momentumVelocity * dt, minY, maxY);
+        if (next <= minY || next >= maxY) this.momentumVelocity = 0;
+        this.panOffsetY.set(next);
+      }
+
+      if (Math.abs(this.momentumVelocity) < ViewerPage.MOMENTUM_STOP_VELOCITY) {
+        this.momentumRaf = null;
+        this.momentumAxis = null;
+        return;
+      }
+      this.momentumRaf = requestAnimationFrame(step);
+    };
+
+    this.momentumRaf = requestAnimationFrame(step);
+  }
+
+  /** Cancel a running coast and clear velocity history. */
+  private stopMomentum(): void {
+    if (this.momentumRaf !== null) {
+      cancelAnimationFrame(this.momentumRaf);
+      this.momentumRaf = null;
+    }
+    this.momentumAxis = null;
+    this.momentumVelocity = 0;
+    this.panSamples = [];
+  }
+
   private beginFlipRelay(): void {
     this.clearHoldTimer();
     this.gestureAxis = null;
@@ -475,6 +575,7 @@ export class ViewerPage {
   @HostListener('window:blur')
   public onWindowBlur(): void {
     this.clearHoldTimer();
+    this.stopMomentum();
     this.gestureAxis = null;
     this.magnifierState.endGesture();
   }
@@ -483,6 +584,7 @@ export class ViewerPage {
   public onVisibilityChange(): void {
     if (document.hidden) {
       this.clearHoldTimer();
+      this.stopMomentum();
       this.gestureAxis = null;
       this.magnifierState.endGesture();
     }
