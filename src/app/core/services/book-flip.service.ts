@@ -8,6 +8,9 @@ import { BookstoreService } from './bookstore.service';
 
 type NaturalSize = { readonly width: number; readonly height: number };
 
+/** Page-flip state machine values delivered by the lib's `changeState` event. */
+export type FlipGestureState = 'user_fold' | 'fold_corner' | 'flipping' | 'read';
+
 /**
  * Wraps a `page-flip` (StPageFlip) instance — owns its lifecycle, exposes
  * a tiny signal-based surface for the rest of the app, and turns the lib's
@@ -34,6 +37,10 @@ export class BookFlipService {
   private instance: PageFlip | null = null;
   private host: HTMLElement | null = null;
   private mountGeneration = 0;
+
+  /** Latest page-flip state from the lib's `changeState` event. */
+  private readonly _flipState = signal<FlipGestureState | null>(null);
+  public readonly flipState = this._flipState.asReadonly();
 
   /** Reactive current page index (0-based), mirrored from the lib. */
   private readonly _currentIndex = signal(0);
@@ -101,6 +108,15 @@ export class BookFlipService {
         }
       });
 
+      // Mirror the lib's state machine (user_fold → fold_corner → flipping →
+      // read) so the viewer can gate gesture handling on it.
+      pf.on('changeState', (e) => {
+        const s = e.data;
+        if (s === 'user_fold' || s === 'fold_corner' || s === 'flipping' || s === 'read') {
+          this._flipState.set(s);
+        }
+      });
+
       this.instance = pf;
       this.syncPageIndex(pf.getCurrentPageIndex());
       this._mounted.set(true);
@@ -110,6 +126,7 @@ export class BookFlipService {
   /** Tear down the current instance if any. Idempotent. Keeps the host in the DOM. */
   public unmount(): void {
     this.mountGeneration++;
+    this._flipState.set(null);
     if (this.instance === null) return;
     try {
       // Do NOT call PageFlip.destroy() — it removes the host from the DOM.
@@ -172,6 +189,18 @@ export class BookFlipService {
   public relayPointerUp(clientX: number, clientY: number): void {
     if (this.instance === null) return;
     this.instance.userStop(this.toBookPoint(clientX, clientY));
+  }
+
+  /**
+   * Commit an active fold gesture in the requested direction. Uses the
+   * public animated flipNext/flipPrev instead of userStop so page-flip's
+   * geometric snap-back heuristic (position.x <= 0 or animate back) never
+   * decides the outcome — any started curl turns the page on release.
+   */
+  public finishFlipGesture(direction: 'next' | 'prev'): void {
+    if (this.instance === null) return;
+    if (direction === 'next') this.instance.flipNext();
+    else this.instance.flipPrev();
   }
 
   /**

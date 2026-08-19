@@ -269,6 +269,8 @@ export class ViewerPage {
   private panBaseX = 0;
   private panBaseY = 0;
   private gestureAxis: GestureAxis | null = null;
+  /** Direction of the in-progress flip gesture; commits on release. */
+  private flipDirection: 'next' | 'prev' | null = null;
   /** Recent pointer samples during a pan — used to derive release velocity. */
   private panSamples: Array<{ x: number; y: number; t: number }> = [];
   private momentumAxis: GestureAxis | null = null;
@@ -279,6 +281,8 @@ export class ViewerPage {
     if (event.button !== 0) return;
     const stage = this.stageRef()?.nativeElement;
     if (stage === undefined) return;
+    // Ignore input while a turn animation is running.
+    if (this.flip.flipState() === 'flipping') return;
 
     this.stopMomentum();
     this.magnifierState.setHolding(true);
@@ -319,14 +323,13 @@ export class ViewerPage {
     if (this.magnifierState.relayPan()) {
       this.applyPanFromDrag(dx, dy);
       this.recordPanSample(event.clientX, event.clientY);
-      if (
-        this.gestureAxis === 'horizontal' &&
-        this.shouldBeginFlipRelay(dx) &&
-        this.bookstore.cornersVisible()
-      ) {
+      if (this.gestureAxis === 'horizontal' && this.shouldBeginFlipRelay(dx)) {
+        // Reached the page edge: stop panning and start the curl fold.
         this.magnifierState.setRelayPan(false);
-        this.beginFlipRelay();
-        this.flip.relayPointerMove(event.clientX, event.clientY);
+        this.beginFlipRelay(dx);
+        if (this.bookstore.cornersVisible()) {
+          this.flip.relayPointerMove(event.clientX, event.clientY);
+        }
       }
       return;
     }
@@ -347,8 +350,10 @@ export class ViewerPage {
     const axis = this.gestureAxis;
 
     if (this.magnifierState.relayFlip()) {
+      // Release commits the fold with the full curl animation in the drag
+      // direction — page-flip's own snap-back heuristic is bypassed.
       if (this.bookstore.cornersVisible()) {
-        this.flip.relayPointerUp(event.clientX, event.clientY);
+        this.flip.finishFlipGesture(this.flipDirection ?? 'next');
       }
     } else if (
       !this.magnifierState.active() &&
@@ -361,6 +366,7 @@ export class ViewerPage {
 
     this.clearHoldTimer();
     this.gestureAxis = null;
+    this.flipDirection = null;
     this.magnifierState.endGesture();
 
     // Fling: keep gliding with the release velocity, decaying each frame.
@@ -407,7 +413,7 @@ export class ViewerPage {
     }
 
     if (this.shouldBeginFlipRelay(dx)) {
-      this.beginFlipRelay();
+      this.beginFlipRelay(dx);
       if (this.bookstore.cornersVisible()) {
         this.flip.relayPointerMove(event.clientX, event.clientY);
       }
@@ -551,9 +557,14 @@ export class ViewerPage {
     this.panSamples = [];
   }
 
-  private beginFlipRelay(): void {
+  /**
+   * Start the interactive curl: hand the pointer off to page-flip's fold
+   * (USER_FOLD) so the page follows the finger. The turn commits on release.
+   */
+  private beginFlipRelay(dx: number): void {
     this.clearHoldTimer();
     this.gestureAxis = null;
+    this.flipDirection = dx < 0 ? 'next' : 'prev';
     this.magnifierState.setRelayFlip(true);
     if (this.bookstore.cornersVisible()) {
       this.flip.relayPointerDown(this.holdStartX, this.holdStartY);
@@ -577,6 +588,7 @@ export class ViewerPage {
     this.clearHoldTimer();
     this.stopMomentum();
     this.gestureAxis = null;
+    this.flipDirection = null;
     this.magnifierState.endGesture();
   }
 
@@ -586,6 +598,7 @@ export class ViewerPage {
       this.clearHoldTimer();
       this.stopMomentum();
       this.gestureAxis = null;
+      this.flipDirection = null;
       this.magnifierState.endGesture();
     }
   }
