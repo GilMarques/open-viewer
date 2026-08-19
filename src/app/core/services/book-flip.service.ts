@@ -194,6 +194,17 @@ export class BookFlipService {
 
 
   /**
+   * Commit a flip with the public animated API (full curl from the page
+   * corner). Used for zoomed gestures where the fold preview is unavailable
+   * because page-flip's coordinates are unscaled.
+   */
+  public finishFlipGesture(direction: 'next' | 'prev'): void {
+    if (this.instance === null) return;
+    if (direction === 'next') this.instance.flipNext();
+    else this.instance.flipPrev();
+  }
+
+  /**
    * Quick tap without a preceding relayPointerDown — page-flip never saw
    * pointerdown because `.stage` captured it for the magnifier hold timer.
    */

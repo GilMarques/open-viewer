@@ -314,6 +314,8 @@ export class ViewerPage {
   private panBaseX = 0;
   private panBaseY = 0;
   private gestureAxis: GestureAxis | null = null;
+  /** Release-committed flip direction for non-1× zoom gestures. */
+  private pendingZoomFlip: 'next' | 'prev' | null = null;
   /** Recent pointer samples during a pan — used to derive release velocity. */
   private panSamples: Array<{ x: number; y: number; t: number }> = [];
   private momentumAxis: GestureAxis | null = null;
@@ -328,6 +330,7 @@ export class ViewerPage {
     if (this.flip.flipState() === 'flipping') return;
 
     this.stopMomentum();
+    this.pendingZoomFlip = null;
     this.magnifierState.setHolding(true);
     this.gestureAxis = null;
 
@@ -366,12 +369,18 @@ export class ViewerPage {
     if (this.magnifierState.relayPan()) {
       this.applyPanFromDrag(dx, dy);
       this.recordPanSample(event.clientX, event.clientY);
-      if (this.gestureAxis === 'horizontal' && this.shouldBeginFlipRelay(dx)) {
-        // Reached the page edge: stop panning and start the curl fold.
-        this.magnifierState.setRelayPan(false);
-        this.beginFlipRelay();
-        if (this.bookstore.cornersVisible()) {
-          this.flip.relayPointerMove(event.clientX, event.clientY);
+      if (this.gestureAxis === 'horizontal') {
+        const intent = this.flipIntent(dx);
+        if (intent === 'fold') {
+          // Reached the page edge: stop panning and start the curl fold.
+          this.magnifierState.setRelayPan(false);
+          this.beginFlipRelay();
+          if (this.bookstore.cornersVisible()) {
+            this.flip.relayPointerMove(event.clientX, event.clientY);
+          }
+        } else if (intent === 'next' || intent === 'prev') {
+          this.magnifierState.setRelayPan(false);
+          this.beginZoomFlip(intent);
         }
       }
       return;
@@ -393,9 +402,15 @@ export class ViewerPage {
     const axis = this.gestureAxis;
 
     if (this.magnifierState.relayFlip()) {
-      // Release: the patched lib completes the fold from its current
-      // position (stopMove commits whenever state is USER_FOLD).
-      if (this.bookstore.cornersVisible()) {
+      if (this.pendingZoomFlip !== null) {
+        // Zoomed flips have no fold preview (lib coords are unscaled) —
+        // commit the full curl animation on release.
+        const dir = this.pendingZoomFlip;
+        this.pendingZoomFlip = null;
+        this.flip.finishFlipGesture(dir);
+      } else if (this.bookstore.cornersVisible()) {
+        // Release: the patched lib completes the fold from its current
+        // position (stopMove commits whenever state is USER_FOLD).
         this.flip.relayPointerUp(event.clientX, event.clientY);
       }
     } else if (
@@ -409,6 +424,7 @@ export class ViewerPage {
 
     this.clearHoldTimer();
     this.gestureAxis = null;
+    this.pendingZoomFlip = null;
     this.magnifierState.endGesture();
 
     // Fling: keep gliding with the release velocity, decaying each frame.
@@ -454,11 +470,16 @@ export class ViewerPage {
       return;
     }
 
-    if (this.shouldBeginFlipRelay(dx)) {
+    const intent = this.flipIntent(dx);
+    if (intent === 'fold') {
       this.beginFlipRelay();
       if (this.bookstore.cornersVisible()) {
         this.flip.relayPointerMove(event.clientX, event.clientY);
       }
+      return;
+    }
+    if (intent === 'next' || intent === 'prev') {
+      this.beginZoomFlip(intent);
       return;
     }
 
@@ -469,8 +490,6 @@ export class ViewerPage {
   }
 
   private shouldBeginFlipRelay(dx: number): boolean {
-    if (!this.bookstore.cornersVisible()) return false;
-
     const { overflowX } = this.panExtents();
     if (overflowX <= 0) {
       return Math.abs(dx) >= ViewerPage.HORIZONTAL_SLOP_PX;
@@ -612,6 +631,57 @@ export class ViewerPage {
     }
   }
 
+  /**
+   * Zoomed flips have no fold preview (page-flip coords are unscaled) —
+   * remember the direction and commit with the full curl animation on
+   * release. Can start or end on the grey surround.
+   */
+  private beginZoomFlip(direction: 'next' | 'prev'): void {
+    this.clearHoldTimer();
+    this.gestureAxis = null;
+    this.pendingZoomFlip = direction;
+    this.magnifierState.setRelayFlip(true);
+  }
+
+  /**
+   * What a horizontal drag wants:
+   *  - near 1× zoom: 'fold' = interactive curl preview via existing edge logic
+   *  - any other zoom: 'next'/'prev' only when the relevant page side is on
+   *    screen — grey surround included. Direction follows the drag sign.
+   */
+  private flipIntent(dx: number): 'fold' | 'next' | 'prev' | null {
+    if (Math.abs(dx) < ViewerPage.HORIZONTAL_SLOP_PX) return null;
+    if (this.bookstore.cornersVisible()) {
+      return this.shouldBeginFlipRelay(dx) ? 'fold' : null;
+    }
+    return this.zoomFlipDirection(dx);
+  }
+
+  /**
+   * Zoom≠1 flip availability. Dragging left turns next only when the page's
+   * side you pull from is on screen; dragging right turns prev. Works from
+   * the grey surround too. Mirrored for RTL.
+   */
+  private zoomFlipDirection(dx: number): 'next' | 'prev' | null {
+    if (Math.abs(dx) < ViewerPage.HORIZONTAL_SLOP_PX) return null;
+    const stage = this.hostRect();
+    const eff = this.effectivePageSize();
+    if (stage === null || eff === null) return null;
+
+    const panX = this.panOffsetX();
+    const leftEdge = panX;
+    const rightEdge = panX + eff.width;
+    const leftOnScreen = leftEdge >= -2 && leftEdge <= stage.width;
+    const rightOnScreen = rightEdge >= 0 && rightEdge <= stage.width + 2;
+
+    if (this.direction() === 'rtl') {
+      if (dx < 0) return leftOnScreen ? 'next' : null;
+      return rightOnScreen ? 'prev' : null;
+    }
+    if (dx < 0) return rightOnScreen ? 'next' : null;
+    return leftOnScreen ? 'prev' : null;
+  }
+
   /** Re-center the page; small (zoomed-out) pages center in the stage. */
   private resetPan(): void {
     const stage = this.hostRect();
@@ -637,6 +707,7 @@ export class ViewerPage {
     this.clearHoldTimer();
     this.stopMomentum();
     this.gestureAxis = null;
+    this.pendingZoomFlip = null;
     this.magnifierState.endGesture();
   }
 
@@ -646,6 +717,7 @@ export class ViewerPage {
       this.clearHoldTimer();
       this.stopMomentum();
       this.gestureAxis = null;
+      this.pendingZoomFlip = null;
       this.magnifierState.endGesture();
     }
   }
