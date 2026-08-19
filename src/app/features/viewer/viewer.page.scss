@@ -69,9 +69,11 @@ ov-book-spread {
   height: 44px;
   padding: 0;
 
-  background: transparent;
-  border: 0;
-  color: rgba(255, 255, 255, 0.55);
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
 
   transition: color 120ms ease, background-color 120ms ease;
