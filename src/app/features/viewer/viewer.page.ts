@@ -357,7 +357,7 @@ export class ViewerPage {
     const dy = event.clientY - this.holdStartY;
 
     if (this.magnifierState.relayFlip()) {
-      this.flip.relayPointerMove(event.clientX, event.clientY);
+      this.flip.relayPointerMove(this.clampToPageX(event.clientX), event.clientY);
       return;
     }
 
@@ -368,8 +368,8 @@ export class ViewerPage {
         // Reached the page edge: stop panning and start the curl fold at the
         // current pointer (the original hold point may be far away after the pan).
         this.magnifierState.setRelayPan(false);
-        this.beginFlipRelay(event.clientX - 10, event.clientY);
-        this.flip.relayPointerMove(event.clientX, event.clientY);
+        this.beginFlipRelay(event.clientX, event.clientY);
+        this.flip.relayPointerMove(this.clampToPageX(event.clientX), event.clientY);
       }
       return;
     }
@@ -393,14 +393,13 @@ export class ViewerPage {
       // Release: the patched lib completes the fold from its current position
       // (stopMove commits whenever state is USER_FOLD) at any zoom — relay
       // coordinates are unscaled by toBookPoint.
-      this.flip.relayPointerUp(event.clientX, event.clientY);
-    } else if (
-      !this.magnifierState.active() &&
-      !wasPan &&
-      this.isQuickTap(event) &&
-      this.bookstore.cornersVisible()
-    ) {
-      this.flip.relayTap(event.clientX, event.clientY);
+      this.flip.relayPointerUp(this.clampToPageX(event.clientX), event.clientY);
+    } else if (!this.magnifierState.active() && !wasPan && this.isQuickTap(event)) {
+      if (this.bookstore.cornersVisible()) {
+        this.flip.relayTap(event.clientX, event.clientY);
+      } else {
+        this.zoomTapFlip(event.clientX);
+      }
     }
 
     this.clearHoldTimer();
@@ -452,7 +451,7 @@ export class ViewerPage {
 
     if (this.flipIntent(dx, event.clientX) === 'fold') {
       this.beginFlipRelay();
-      this.flip.relayPointerMove(event.clientX, event.clientY);
+      this.flip.relayPointerMove(this.clampToPageX(event.clientX), event.clientY);
       return;
     }
 
@@ -599,7 +598,23 @@ export class ViewerPage {
     this.clearHoldTimer();
     this.gestureAxis = null;
     this.magnifierState.setRelayFlip(true);
-    this.flip.relayPointerDown(x ?? this.holdStartX, y ?? this.holdStartY);
+    const px = x ?? this.holdStartX;
+    const py = y ?? this.holdStartY;
+    if (this.bookstore.cornersVisible()) {
+      this.flip.relayPointerDown(px, py);
+      return;
+    }
+    // Zoomed: anchor the fold on the page edge nearest the pull so the curl
+    // renders attached to the page even when the pointer starts on the grey.
+    const e = this.pageEdges();
+    if (e === null) {
+      this.flip.relayPointerDown(px, py);
+      return;
+    }
+    const rtl = this.direction() === 'rtl';
+    const center = (e.left + e.right) / 2;
+    const pullNext = rtl ? px < center : px >= center;
+    this.flip.relayPointerDown(pullNext ? e.right : e.left, py);
   }
 
   /**
@@ -613,6 +628,48 @@ export class ViewerPage {
       return this.shouldBeginFlipRelay(dx) ? 'fold' : null;
     }
     return this.zoomedFoldAvailable(clientX) ? 'fold' : null;
+  }
+
+  /** Page's visible left/right edges in viewport coords. */
+  private pageEdges(): { left: number; right: number } | null {
+    const stage = this.hostRect();
+    const eff = this.effectivePageSize();
+    if (stage === null || eff === null) return null;
+    const panX = this.panOffsetX();
+    return { left: stage.left + panX, right: stage.left + panX + eff.width };
+  }
+
+  /** Clamp a viewport x into the page's visible bounds — drags that start or
+   *  end on the grey grab the page's nearest edge instead of a point outside
+   *  the book (page-flip's fold math throws for points too far outside). */
+  private clampToPageX(clientX: number): number {
+    const e = this.pageEdges();
+    if (e === null) return clientX;
+    return clamp(clientX, e.left, e.right);
+  }
+
+  /** Zoomed-out taps: the grey margins belong to the page — tapping the left
+   *  or right third flips prev/next (mirrored for RTL) when that page edge is
+   *  on screen. */
+  private zoomTapFlip(clientX: number): void {
+    const stage = this.hostRect();
+    const eff = this.effectivePageSize();
+    if (stage === null || eff === null) return;
+
+    const panX = this.panOffsetX();
+    const leftOn = panX >= -2 && panX <= stage.width;
+    const rightOn = panX + eff.width >= 0 && panX + eff.width <= stage.width + 2;
+
+    const x = clientX - stage.left;
+    const third = stage.width / 3;
+    const rtl = this.direction() === 'rtl';
+    if (x < third && (rtl ? leftOn : rightOn)) {
+      if (rtl) this.flip.flipNext();
+      else this.flip.flipPrev();
+    } else if (x > 2 * third && (rtl ? rightOn : leftOn)) {
+      if (rtl) this.flip.flipPrev();
+      else this.flip.flipNext();
+    }
   }
 
   /**
