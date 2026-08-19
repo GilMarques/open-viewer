@@ -74,21 +74,24 @@ export class BookstoreService {
   }
 
   /** Zoom factor applied to the rendered page quad. 1 = fit-screen.
-   *  Reset on book open. v1 only: desktop scroll-wheel zoom. Pinch comes later. */
+   *  Reset on book open. v1 only: desktop scroll-wheel zoom (Ctrl/Cmd+wheel
+   *  or trackpad pinch). */
   private readonly _zoom = signal(1);
   public readonly zoom = this._zoom.asReadonly();
 
-  /** True only when zoomed all the way out — that's the only state in v1
-   *  where a page corner is guaranteed visible. The flip lib's curl is
-   *  gated on this. */
-  public readonly cornersVisible = computed(() => this._zoom() === 1);
+  /** True when zoom is at (or very near) 1× — the only state where a page
+   *  corner sits at a predictable spot for the flip lib's curl (its internal
+   *  coords are unscaled). Wheel steps land near 1 but rarely on it, so a
+   *  small tolerance keeps flips working instead of locking them out. */
+  public readonly cornersVisible = computed(() => Math.abs(this._zoom() - 1) < 0.05);
 
   /** Apply a multiplicative zoom factor (e.g. wheel delta → 1.1 / 0.9).
-   *  Clamped to [1, 4]. No-op on books that aren't open. */
+   *  Clamped to [0.2, 4] — you can zoom out far past the page bounds
+   *  (grey surround) and in up to 4×. No-op on books that aren't open. */
   public setZoom(factor: number): void {
     if (this._state().book === null) return;
     if (!Number.isFinite(factor) || factor <= 0) return;
-    const next = Math.min(4, Math.max(1, this._zoom() * factor));
+    const next = Math.min(4, Math.max(0.2, this._zoom() * factor));
     this._zoom.set(next);
   }
 

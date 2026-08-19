@@ -12,6 +12,7 @@
     <ov-book-spread
       [book]="openBook()"
       [style.transform]="panTransform()"
+      [style.transform-origin]="'0 0'"
     />
   </div>
 
@@ -27,6 +28,10 @@
     [naturalHeight]="naturalSize()?.height ?? 0"
     [zoom]="magnifierZoom()"
   />
+
+  @if (showZoomLabel()) {
+    <div class="zoom-label" aria-hidden="true">{{ zoomLabel() }}</div>
+  }
 
   <button
     type="button"

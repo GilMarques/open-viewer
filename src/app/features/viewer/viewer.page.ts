@@ -106,9 +106,16 @@ export class ViewerPage {
   private readonly panOffsetX = signal(0);
   private readonly panOffsetY = signal(0);
 
-  public readonly panTransform = computed(
-    () => `translate(${this.panOffsetX()}px, ${this.panOffsetY()}px)`,
-  );
+  public readonly panTransform = computed(() => {
+    const s = this.bookstore.zoom();
+    return `translate(${this.panOffsetX()}px, ${this.panOffsetY()}px) scale(${s})`;
+  });
+
+  /** Zoom percentage label, e.g. "100%". */
+  public readonly zoomLabel = computed(() => `${Math.round(this.bookstore.zoom() * 100)}%`);
+
+  /** Show the zoom label only when zoom deviates from the fit default. */
+  public readonly showZoomLabel = computed(() => Math.abs(this.bookstore.zoom() - 1) >= 0.01);
 
   private readonly spreadLayout = computed<'single' | 'double'>(() => {
     const layout = this.settings.settings().display.pageLayout;
@@ -122,6 +129,13 @@ export class ViewerPage {
     const zoom = this.settings.settings().display.zoom;
     return computePageDimensions(stage.width, stage.height, natural, zoom, this.spreadLayout());
   });
+  /** Rendered page size at the current wheel-zoom scale (bookstore.zoom). */
+  private readonly effectivePageSize = computed<{ width: number; height: number } | null>(() => {
+    const base = this.renderedPageSize();
+    if (base === null) return null;
+    const s = this.bookstore.zoom();
+    return { width: base.width * s, height: base.height * s };
+  });
 
   private readonly panExtents = computed<PanExtents>(() => {
     const stage = this.hostRect();
@@ -129,27 +143,39 @@ export class ViewerPage {
       return { minX: 0, maxX: 0, minY: 0, maxY: 0, overflowX: 0, overflowY: 0 };
     }
 
+    const scale = this.bookstore.zoom();
     const rendered = this.renderedPageSize();
     const pageRect = this.flip.mounted() ? this.flip.getPageElementRect() : null;
 
-    let overflowX = 0;
-    let overflowY = 0;
+    let width = 0;
+    let height = 0;
     if (rendered !== null) {
-      overflowX = Math.max(0, rendered.width - stage.width);
-      overflowY = Math.max(0, rendered.height - stage.height);
+      width = Math.max(width, rendered.width);
+      height = Math.max(height, rendered.height);
     }
     if (pageRect !== null) {
-      overflowX = Math.max(overflowX, pageRect.width - stage.width);
-      overflowY = Math.max(overflowY, pageRect.height - stage.height);
+      width = Math.max(width, pageRect.width);
+      height = Math.max(height, pageRect.height);
     }
 
+    const effW = width * scale;
+    const effH = height * scale;
+
+    // Oversized pages slide so they always cover the stage. Smaller pages
+    // (zoomed out) can sit anywhere while fully visible — this keeps the
+    // cursor-anchor working when zooming out instead of snapping to center.
+    const minX = effW >= stage.width ? -(effW - stage.width) : 0;
+    const maxX = effW >= stage.width ? 0 : stage.width - effW;
+    const minY = effH >= stage.height ? -(effH - stage.height) : 0;
+    const maxY = effH >= stage.height ? 0 : stage.height - effH;
+
     return {
-      minX: -overflowX,
-      maxX: 0,
-      minY: -overflowY,
-      maxY: 0,
-      overflowX,
-      overflowY,
+      minX,
+      maxX,
+      minY,
+      maxY,
+      overflowX: Math.max(0, effW - stage.width),
+      overflowY: Math.max(0, effH - stage.height),
     };
   });
 
@@ -160,29 +186,30 @@ export class ViewerPage {
    */
   public readonly pageImageRect = computed<DOMRect | null>(() => {
     const stage = this.hostRect();
-    if (stage === null) return null;
+    const eff = this.effectivePageSize();
+    if (stage === null || eff === null) return null;
 
     const panX = this.panOffsetX();
     const panY = this.panOffsetY();
 
     const layout = this.settings.settings().display.pageLayout;
     if (layout !== 'auto-dual') {
-      return new DOMRect(stage.left + panX, stage.top + panY, stage.width, stage.height);
+      return new DOMRect(stage.left + panX, stage.top + panY, eff.width, eff.height);
     }
 
     const state = this.bookstore.state();
     if (state.book === null) {
-      return new DOMRect(stage.left + panX, stage.top + panY, stage.width, stage.height);
+      return new DOMRect(stage.left + panX, stage.top + panY, eff.width, eff.height);
     }
 
     const index = state.currentIndex;
     const rtl = this.settings.settings().display.readingDirection === 'rtl';
-    const halfW = stage.width / 2;
+    const halfW = eff.width / 2;
     const onLeft = rtl ? index % 2 === 1 : index % 2 === 0;
 
     return onLeft
-      ? new DOMRect(stage.left + panX, stage.top + panY, halfW, stage.height)
-      : new DOMRect(stage.left + halfW + panX, stage.top + panY, halfW, stage.height);
+      ? new DOMRect(stage.left + panX, stage.top + panY, halfW, eff.height)
+      : new DOMRect(stage.left + halfW + panX, stage.top + panY, halfW, eff.height);
   });
 
   /** Viewport size. */
@@ -247,8 +274,26 @@ export class ViewerPage {
   public onWheel(event: WheelEvent): void {
     if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
+
+    const oldZoom = this.bookstore.zoom();
     const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
     this.bookstore.setZoom(factor);
+    const newZoom = this.bookstore.zoom();
+    if (newZoom === oldZoom) return; // already at a bound
+
+    // Anchor the zoom on the point under the cursor: keep the same stage
+    // position fixed while the page scales (origin 0 0, translate + scale).
+    const stage = this.stageRef()?.nativeElement;
+    if (stage === undefined) return;
+    const rect = stage.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    const k = newZoom / oldZoom;
+    const nx = px - (px - this.panOffsetX()) * k;
+    const ny = py - (py - this.panOffsetY()) * k;
+    const { minX, maxX, minY, maxY } = this.panExtents();
+    this.panOffsetX.set(clamp(nx, minX, maxX));
+    this.panOffsetY.set(clamp(ny, minY, maxY));
   }
 
   // ──────────── Magnifier + page-flip pointer relay ────────────
@@ -567,9 +612,17 @@ export class ViewerPage {
     }
   }
 
+  /** Re-center the page; small (zoomed-out) pages center in the stage. */
   private resetPan(): void {
-    this.panOffsetX.set(0);
-    this.panOffsetY.set(0);
+    const stage = this.hostRect();
+    const eff = this.effectivePageSize();
+    if (stage !== null && eff !== null) {
+      this.panOffsetX.set(Math.max(0, (stage.width - eff.width) / 2));
+      this.panOffsetY.set(Math.max(0, (stage.height - eff.height) / 2));
+    } else {
+      this.panOffsetX.set(0);
+      this.panOffsetY.set(0);
+    }
   }
 
   private clearHoldTimer(): void {
