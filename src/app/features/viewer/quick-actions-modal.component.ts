@@ -1,11 +1,12 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  inject,
   input,
   output,
   signal,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import {
   IonContent,
   IonIcon,
@@ -49,7 +50,6 @@ interface QuickActionEntry {
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink,
     DisplaySettingsComponent,
     FiltersSettingsComponent,
 
@@ -83,7 +83,6 @@ interface QuickActionEntry {
               <ion-label>Filters</ion-label>
             </ion-segment-button>
           </ion-segment>
-
         </ion-toolbar>
 
         <ion-content>
@@ -93,7 +92,8 @@ interface QuickActionEntry {
                 @for (entry of menu; track entry.url) {
                   <ion-item
                     button
-                    [routerLink]="[entry.url]"
+                    [detail]="false"
+                    (click)="navigateTo(entry.url)"
                   >
                     <ion-icon
                       aria-hidden="true"
@@ -135,6 +135,8 @@ interface QuickActionEntry {
   ],
 })
 export class QuickActionsModalComponent {
+  private readonly router = inject(Router);
+
   /** Whether the modal is visible. Two-way bound by the parent. */
   public readonly isOpen = input<boolean>(false);
 
@@ -166,5 +168,11 @@ export class QuickActionsModalComponent {
 
   public close(): void {
     this.didDismiss.emit();
+  }
+
+  /** Main-menu row tap — dismiss sheet then route (routerLink is unreliable inside ion-modal). */
+  public navigateTo(url: string): void {
+    this.didDismiss.emit();
+    void this.router.navigateByUrl(url);
   }
 }

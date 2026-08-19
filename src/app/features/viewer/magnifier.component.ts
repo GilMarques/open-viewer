@@ -9,20 +9,13 @@ import {
  * Loupe overlay rendered when the user holds a pointer on the page.
  *
  * Geometry:
- *   - The visible page lives inside `.stage`. We capture its rect
- *     (hostRect) and the pointer's viewport coords (pointerX/Y).
- *   - The pointer's fractional position inside the stage maps to the
- *     page image's natural pixel coords.
- *   - We render a square snippet (~22% of the smaller viewport axis)
- *     inside a fixed-position div at the corner OPPOSITE the pointer.
- *   - Background-image is the page URL, sized 1:1 to the natural
- *     dimensions, then transformed by the user's magnifierZoom.
- *     background-position offsets so the pixel under the pointer lands
- *     at the centre of the visible square.
- *
- * Why CSS background-image rather than a canvas: zero JS per move, the
- * browser caches the image, and we don't fight page-flip's transform
- * pipeline (we sample the source image, not the rendered canvas).
+ *   - `imageRect` is the viewport bounds where the current page image is
+ *     drawn (full stage in single layout, left/right half in dual spread).
+ *   - Pointer coords map to a fractional position inside that rect, then to
+ *     natural image pixels (srcX, srcY).
+ *   - A square window (~44% of min(vw, vh)) docks at the corner opposite
+ *     the pointer. CSS background-image samples the page URL; background-size
+ *     and background-position centre srcX/srcY under the loupe centre.
  */
 @Component({
   selector: 'ov-magnifier',
@@ -37,12 +30,10 @@ import {
         [class.bl]="placement() === 'bl'"
         [class.br]="placement() === 'br'"
         [style.background-image]="backgroundImage()"
-        [style.background-size.px]="backgroundSize()"
+        [style.background-size]="backgroundSize()"
         [style.background-position]="backgroundPosition()"
         [style.width.px]="loupeSizePx()"
         [style.height.px]="loupeSizePx()"
-        [style.transform]="'scale(' + zoom() + ')'"
-        [style.transformOrigin]="transformOrigin()"
         aria-hidden="true"
       ></div>
     }
@@ -60,7 +51,6 @@ import {
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
         background-repeat: no-repeat;
         background-color: #000;
-        transform-origin: center center;
       }
       .loupe.tl { top: 3vmin; left: 3vmin; }
       .loupe.tr { top: 3vmin; right: 3vmin; }
@@ -82,8 +72,8 @@ export class MagnifierComponent {
   /** Pointer Y in viewport coords. */
   public readonly pointerY = input<number>(0);
 
-  /** The .stage element's bounding rect (viewport-relative). */
-  public readonly hostRect = input<DOMRect | null>(null);
+  /** Viewport rect of the rendered current page (not the full stage in dual spread). */
+  public readonly imageRect = input<DOMRect | null>(null);
 
   /** Page image's natural pixel dimensions. */
   public readonly naturalWidth = input<number>(0);
@@ -92,12 +82,12 @@ export class MagnifierComponent {
   /** Magnification factor from settings. 1 = no zoom. */
   public readonly zoom = input<number>(1);
 
-  /** Viewport size (used for placement and loupe sizing). */
+  /** Viewport size (used for placement decisions). */
   public readonly viewportWidth = input<number>(0);
   public readonly viewportHeight = input<number>(0);
 
-  /** Loupe window side length — ~22% of the smaller viewport axis. */
-  private static readonly LOUPE_VIEWPORT_FRACTION = 0.22;
+  /** Loupe window side length — ~44% of the smaller viewport axis. */
+  private static readonly LOUPE_VIEWPORT_FRACTION = 0.44;
 
   public readonly loupeSizePx = computed(() => {
     const vw = this.viewportWidth();
@@ -109,12 +99,11 @@ export class MagnifierComponent {
   public readonly visible = computed(() => {
     if (!this.active()) return false;
     if (this.pageUrl() === null) return false;
-    if (this.hostRect() === null) return false;
+    const rect = this.imageRect();
+    if (rect === null) return false;
     if (this.naturalWidth() === 0 || this.naturalHeight() === 0) return false;
-    const rect = this.hostRect()!;
     const px = this.pointerX();
     const py = this.pointerY();
-    // Pointer must be inside the visible stage.
     return (
       px >= rect.left && px <= rect.right && py >= rect.top && py <= rect.bottom
     );
@@ -134,9 +123,9 @@ export class MagnifierComponent {
         : 'tl';
   });
 
-  /** Fractional pointer position inside the visible stage. */
+  /** Fractional pointer position inside the rendered page rect. */
   private readonly pointerFraction = computed<{ fx: number; fy: number } | null>(() => {
-    const rect = this.hostRect();
+    const rect = this.imageRect();
     if (rect === null || rect.width === 0 || rect.height === 0) return null;
     return {
       fx: (this.pointerX() - rect.left) / rect.width,
@@ -149,38 +138,28 @@ export class MagnifierComponent {
     return url === null ? 'none' : `url("${url}")`;
   });
 
-  /**
-   * CSS background-size in CSS pixels (px units). The background is sized
-   * so the page image fills the loupe at 1:1 plus the user's zoom factor.
-   */
-  public readonly backgroundSize = computed<number>(() => {
-    const frac = this.pointerFraction();
-    if (frac === null) return 0;
+  /** Scaled natural dimensions — zoom applied once here (not via CSS transform). */
+  public readonly backgroundSize = computed<string>(() => {
     const nw = this.naturalWidth();
     const nh = this.naturalHeight();
-    return Math.max(nw, nh) * this.zoom();
+    const z = this.zoom();
+    if (nw === 0 || nh === 0) return '0px 0px';
+    return `${nw * z}px ${nh * z}px`;
   });
 
   /**
-   * CSS background-position offsets (x, y) in CSS pixels. Computed so
-   * that the pixel currently under the pointer lands at the centre of
-   * the loupe window.
+   * Offsets the scaled background so the source pixel under the pointer
+   * sits at the centre of the loupe window.
    */
   public readonly backgroundPosition = computed<string>(() => {
     const frac = this.pointerFraction();
     if (frac === null) return '0px 0px';
     const nw = this.naturalWidth();
     const nh = this.naturalHeight();
-    const bgSize = this.backgroundSize();
+    const z = this.zoom();
     const half = this.loupeSizePx() / 2;
     const srcX = frac.fx * nw;
     const srcY = frac.fy * nh;
-    const bgX = srcX * (bgSize / nw);
-    const bgY = srcY * (bgSize / nh);
-    return `${-bgX + half}px ${-bgY + half}px`;
+    return `${-srcX * z + half}px ${-srcY * z + half}px`;
   });
-
-  public transformOrigin(): string {
-    return 'center center';
-  }
 }

@@ -12,7 +12,6 @@ import {
   IonMenu,
   IonMenuToggle,
   IonRouterOutlet,
-  IonSplitPane,
 } from '@ionic/angular/standalone';
 
 import { SettingsService } from './core/services/settings.service';
@@ -27,7 +26,6 @@ type MenuItem = { title: string; url: string; icon: string };
     RouterLink,
     RouterLinkActive,
     IonApp,
-    IonSplitPane,
     IonMenu,
     IonContent,
     IonList,

@@ -95,6 +95,35 @@ export class ViewerPage {
   private readonly _hostRect = signal<DOMRect | null>(null);
   public readonly hostRect = this._hostRect.asReadonly();
 
+  /**
+   * Viewport rect where the current page image is drawn. In dual spread
+   * each page occupies half the stage; mapping pointer → image must use
+   * this rect, not the full stage.
+   */
+  public readonly pageImageRect = computed<DOMRect | null>(() => {
+    const stage = this.hostRect();
+    if (stage === null) return null;
+
+    const layout = this.settings.settings().display.pageLayout;
+    if (layout !== 'auto-dual') {
+      return stage;
+    }
+
+    const state = this.bookstore.state();
+    if (state.book === null) {
+      return stage;
+    }
+
+    const index = state.currentIndex;
+    const rtl = this.settings.settings().display.readingDirection === 'rtl';
+    const halfW = stage.width / 2;
+    const onLeft = rtl ? index % 2 === 1 : index % 2 === 0;
+
+    return onLeft
+      ? new DOMRect(stage.left, stage.top, halfW, stage.height)
+      : new DOMRect(stage.left + halfW, stage.top, halfW, stage.height);
+  });
+
   /** Viewport size. */
   private readonly _viewportWidth = signal(0);
   private readonly _viewportHeight = signal(0);

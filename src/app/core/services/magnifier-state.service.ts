@@ -5,7 +5,8 @@ import { Injectable, signal } from '@angular/core';
  *
  * Written by the viewer page (pointer pipeline + hold timer).
  * The viewer uses `relayFlip` to hand a drag off to page-flip once slop
- * is exceeded; while holding (before loupe or relay) page-flip must stay idle.
+ * is exceeded; `relayPan` does the same for oversized pages. While holding
+ * (before loupe or relay) page-flip must stay idle.
  */
 @Injectable({ providedIn: 'root' })
 export class MagnifierStateService {
@@ -21,6 +22,10 @@ export class MagnifierStateService {
   private readonly _relayFlip = signal(false);
   public readonly relayFlip = this._relayFlip.asReadonly();
 
+  /** Drag exceeded slop — viewer pans an oversized page instead of curling. */
+  private readonly _relayPan = signal(false);
+  public readonly relayPan = this._relayPan.asReadonly();
+
   public setHolding(value: boolean): void {
     this._holding.set(value);
   }
@@ -33,10 +38,15 @@ export class MagnifierStateService {
     this._relayFlip.set(value);
   }
 
+  public setRelayPan(value: boolean): void {
+    this._relayPan.set(value);
+  }
+
   /** Reset all gesture flags (pointer up, blur, visibility change). */
   public endGesture(): void {
     this._holding.set(false);
     this._active.set(false);
     this._relayFlip.set(false);
+    this._relayPan.set(false);
   }
 }

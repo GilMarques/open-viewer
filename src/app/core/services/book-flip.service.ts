@@ -1,9 +1,12 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 
 import { PageFlip, type FlipSetting } from 'page-flip';
 
 import type { Book } from '../models/book.model';
 import type { ZoomMode } from '../models/settings.model';
+import { BookstoreService } from './bookstore.service';
+
+type NaturalSize = { readonly width: number; readonly height: number };
 
 /**
  * Wraps a `page-flip` (StPageFlip) instance — owns its lifecycle, exposes
@@ -20,11 +23,17 @@ import type { ZoomMode } from '../models/settings.model';
  *    `relayPointerDown/Move/Up` and `relayTap` (see PageFlip.startUserTouch).
  *  - This keeps the magnifier hold gesture and page-curl from fighting over
  *    the same pointerdown.
+ *
+ * Remount note: PageFlip.destroy() removes the host element from the DOM.
+ * unmount() only tears down the lib UI so Angular's host ref stays attached.
  */
 @Injectable({ providedIn: 'root' })
 export class BookFlipService {
+  private readonly bookstore = inject(BookstoreService);
+
   private instance: PageFlip | null = null;
   private host: HTMLElement | null = null;
+  private mountGeneration = 0;
 
   /** Reactive current page index (0-based), mirrored from the lib. */
   private readonly _currentIndex = signal(0);
@@ -36,57 +45,80 @@ export class BookFlipService {
 
   /**
    * Mount a PageFlip instance on `host` and load all pages from `book`.
-   *
-   * `host` must already have its CSS size set (width/height in px). The
-   * lib measures the host; if it's 0×0 the curl won't be hittable.
+   * Destroys any previous instance first. Preserves the current page index
+   * across remounts (layout / zoom changes).
    */
   public mount(
     host: HTMLElement,
     book: Book,
     layout: 'single' | 'double',
-    zoom: ZoomMode = 'stretch-to-fill',
+    zoom: ZoomMode = 'fit-screen',
   ): void {
+    const pageIndex = Math.max(0, Math.min(this._currentIndex(), book.pages.length - 1));
+    const url = book.pages[pageIndex]?.url ?? book.pages[0]?.url;
+    if (url === undefined) return;
+
     this.unmount();
-
-    const settings: Partial<FlipSetting> = {
-      width: host.clientWidth,
-      height: host.clientHeight,
-      showPageCorners: true,
-      disableFlipByClick: false,
-      ...(layout === 'single'
-        ? { singlePage: true, usePortrait: true }
-        : { singlePage: false, usePortrait: false }),
-      startZIndex: 0,
-      autoSize: false,
-      drawShadow: true,
-      flippingTime: 600,
-      maxShadowOpacity: 0.5,
-      // Viewer `.stage` relays pointer events; lib must not register its own.
-      useMouseEvents: false,
-    };
-
-    const pf = new PageFlip(host, settings);
-    pf.loadFromImages(book.pages.map((p) => p.url));
-
-    pf.on('flip', (e) => {
-      if (typeof e.data === 'number') {
-        this._currentIndex.set(e.data);
-      }
-    });
-
-    this.instance = pf;
     this.host = host;
-    this._currentIndex.set(pf.getCurrentPageIndex());
-    this._mounted.set(true);
+    this.resetHost(host);
+
+    const generation = ++this.mountGeneration;
+
+    void this.loadImageNaturalSize(url).then((natural) => {
+      if (generation !== this.mountGeneration || this.host !== host) return;
+      if (!host.isConnected) return;
+
+      const containerW = host.clientWidth;
+      const containerH = host.clientHeight;
+      if (containerW <= 0 || containerH <= 0) return;
+
+      const pageSize = computePageDimensions(containerW, containerH, natural, zoom, layout);
+
+      const settings: Partial<FlipSetting> = {
+        width: pageSize.width,
+        height: pageSize.height,
+        startPage: pageIndex,
+        showPageCorners: true,
+        disableFlipByClick: false,
+        ...(layout === 'single'
+          ? { usePortrait: true }
+          : { usePortrait: false }),
+        startZIndex: 0,
+        autoSize: false,
+        drawShadow: true,
+        flippingTime: 600,
+        maxShadowOpacity: 0.5,
+        // Viewer `.stage` relays pointer events; lib must not register its own.
+        useMouseEvents: false,
+      };
+
+      const pf = new PageFlip(host, settings);
+      pf.loadFromImages(book.pages.map((p) => p.url));
+
+      pf.on('flip', (e) => {
+        if (typeof e.data === 'number') {
+          this.syncPageIndex(e.data);
+        }
+      });
+
+      this.instance = pf;
+      this.syncPageIndex(pf.getCurrentPageIndex());
+      this._mounted.set(true);
+    });
   }
 
-  /** Tear down the current instance if any. Idempotent. */
+  /** Tear down the current instance if any. Idempotent. Keeps the host in the DOM. */
   public unmount(): void {
+    this.mountGeneration++;
     if (this.instance === null) return;
     try {
-      this.instance.destroy();
+      // Do NOT call PageFlip.destroy() — it removes the host from the DOM.
+      this.instance.getUI().destroy();
     } catch {
       // destroy() can throw if the host was already detached. Swallow.
+    }
+    if (this.host !== null) {
+      this.resetHost(this.host);
     }
     this.instance = null;
     this.host = null;
@@ -148,4 +180,94 @@ export class BookFlipService {
     const rect = this.instance!.getUI().getDistElement().getBoundingClientRect();
     return { x: clientX - rect.left, y: clientY - rect.top };
   }
+
+  /** Strip page-flip DOM/state from the host so a fresh instance can mount. */
+  private resetHost(host: HTMLElement): void {
+    host.replaceChildren();
+    host.classList.remove('stf__parent');
+    host.style.removeProperty('min-width');
+    host.style.removeProperty('min-height');
+    host.style.removeProperty('width');
+    host.style.removeProperty('max-width');
+    host.style.removeProperty('display');
+  }
+
+  private loadImageNaturalSize(url: string): Promise<NaturalSize> {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.onload = () => {
+        resolve({
+          width: Math.max(1, img.naturalWidth),
+          height: Math.max(1, img.naturalHeight),
+        });
+      };
+      img.onerror = () => resolve({ width: 800, height: 1200 });
+      img.src = url;
+    });
+  }
+
+  /** Keep BookstoreService in sync so magnifier / progress track the visible page. */
+  private syncPageIndex(index: number): void {
+    this._currentIndex.set(index);
+    this.bookstore.goTo(index);
+  }
+}
+
+/** Map Display > Zoom to page-flip page dimensions (per-page leaf size). */
+export function computePageDimensions(
+  containerW: number,
+  containerH: number,
+  image: NaturalSize,
+  zoom: ZoomMode,
+  layout: 'single' | 'double',
+): { width: number; height: number } {
+  const pageContainerW = layout === 'double' ? containerW / 2 : containerW;
+  const pageContainerH = containerH;
+
+  const iw = image.width;
+  const ih = image.height;
+  const aspect = iw / ih;
+
+  let pageW = pageContainerW;
+  let pageH = pageContainerH;
+
+  switch (zoom) {
+    case 'actual-size':
+      pageW = iw;
+      pageH = ih;
+      break;
+    case 'fit-width':
+      pageW = pageContainerW;
+      pageH = pageContainerW / aspect;
+      break;
+    case 'fit-height':
+      pageH = pageContainerH;
+      pageW = pageContainerH * aspect;
+      break;
+    case 'fit-screen': {
+      const scale = Math.min(pageContainerW / iw, pageContainerH / ih);
+      pageW = iw * scale;
+      pageH = ih * scale;
+      break;
+    }
+    case 'cover': {
+      const scale = Math.max(pageContainerW / iw, pageContainerH / ih);
+      pageW = iw * scale;
+      pageH = ih * scale;
+      break;
+    }
+    case 'fixed-size':
+      // Numeric picker is out of v1 scope — treat as fit-screen.
+    case 'stretch-to-fill':
+    default:
+      pageW = pageContainerW;
+      pageH = pageContainerH;
+      break;
+  }
+
+  return {
+    width: Math.max(1, Math.round(pageW)),
+    height: Math.max(1, Math.round(pageH)),
+  };
 }
