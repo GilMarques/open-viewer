@@ -193,16 +193,6 @@ export class BookFlipService {
 
 
 
-  /**
-   * Commit a flip with the public animated API (full curl from the page
-   * corner). Used for zoomed gestures where the fold preview is unavailable
-   * because page-flip's coordinates are unscaled.
-   */
-  public finishFlipGesture(direction: 'next' | 'prev'): void {
-    if (this.instance === null) return;
-    if (direction === 'next') this.instance.flipNext();
-    else this.instance.flipPrev();
-  }
 
   /**
    * Quick tap without a preceding relayPointerDown — page-flip never saw
@@ -218,7 +208,14 @@ export class BookFlipService {
   /** Convert viewport coords to book-local coords (matches UI.getMousePos). */
   private toBookPoint(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.instance!.getUI().getDistElement().getBoundingClientRect();
-    return { x: clientX - rect.left, y: clientY - rect.top };
+    // The host is CSS-transformed (translate + scale) at non-1× zoom; the
+    // library works in unscaled coordinates, so divide the viewport delta by
+    // the current zoom to keep the fold / tap mapping exact.
+    const scale = this.bookstore.zoom();
+    return {
+      x: (clientX - rect.left) / scale,
+      y: (clientY - rect.top) / scale,
+    };
   }
 
   /** Strip page-flip DOM/state from the host so a fresh instance can mount. */
