@@ -50,6 +50,12 @@ export class BookFlipService {
   private readonly _mounted = signal(false);
   public readonly mounted = this._mounted.asReadonly();
 
+  /** Book-wide single-page size the lib is mounted with. Stable per mount and
+   *  independent of which page is currently shown, so fit modes apply to the
+   *  whole book and page turns never resize the canvas. */
+  private readonly _bookPageSize = signal<{ width: number; height: number } | null>(null);
+  public readonly bookPageSize = this._bookPageSize.asReadonly();
+
   /**
    * Mount a PageFlip instance on `host` and load all pages from `book`.
    * Destroys any previous instance first. Preserves the current page index
@@ -64,6 +70,9 @@ export class BookFlipService {
     const pageIndex = Math.max(0, Math.min(this._currentIndex(), book.pages.length - 1));
     const url = book.pages[pageIndex]?.url ?? book.pages[0]?.url;
     if (url === undefined) return;
+    // Size the whole book from a stable reference page (the first), not the
+    // current one, so fit modes apply consistently book-wide.
+    const fitUrl = book.pages[0]?.url ?? url;
 
     this.unmount();
     this.host = host;
@@ -71,7 +80,7 @@ export class BookFlipService {
 
     const generation = ++this.mountGeneration;
 
-    void this.loadImageNaturalSize(url).then((natural) => {
+    void this.loadImageNaturalSize(fitUrl).then((natural) => {
       if (generation !== this.mountGeneration || this.host !== host) return;
       if (!host.isConnected) return;
 
@@ -80,6 +89,7 @@ export class BookFlipService {
       if (containerW <= 0 || containerH <= 0) return;
 
       const pageSize = computePageDimensions(containerW, containerH, natural, zoom, layout);
+      this._bookPageSize.set(pageSize);
 
       const settings: Partial<FlipSetting> = {
         width: pageSize.width,
@@ -127,6 +137,7 @@ export class BookFlipService {
   public unmount(): void {
     this.mountGeneration++;
     this._flipState.set(null);
+    this._bookPageSize.set(null);
     if (this.instance === null) return;
     try {
       // Do NOT call PageFlip.destroy() — it removes the host from the DOM.

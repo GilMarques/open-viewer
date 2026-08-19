@@ -14,7 +14,7 @@ import { IonContent, IonIcon } from '@ionic/angular/standalone';
 
 import { buildKingdomSample } from '../../core/debug/sample-books';
 import type { FilterSettings } from '../../core/models/settings.model';
-import { BookFlipService, computePageDimensions } from '../../core/services/book-flip.service';
+import { BookFlipService } from '../../core/services/book-flip.service';
 import { BookstoreService } from '../../core/services/bookstore.service';
 import { MagnifierStateService } from '../../core/services/magnifier-state.service';
 import { SettingsService } from '../../core/services/settings.service';
@@ -118,18 +118,10 @@ export class ViewerPage {
   /** Show the zoom label only when zoom deviates from the fit default. */
   public readonly showZoomLabel = computed(() => Math.abs(this.bookstore.zoom() - 1) >= 0.01);
 
-  private readonly spreadLayout = computed<'single' | 'double'>(() => {
-    const layout = this.settings.settings().display.pageLayout;
-    return layout === 'auto-dual' ? 'double' : 'single';
-  });
-
-  private readonly renderedPageSize = computed(() => {
-    const natural = this.naturalSize();
-    const stage = this.hostRect();
-    if (natural === null || stage === null) return null;
-    const zoom = this.settings.settings().display.zoom;
-    return computePageDimensions(stage.width, stage.height, natural, zoom, this.spreadLayout());
-  });
+  /** Book-wide rendered page size — read from the mounted page-flip instance
+   *  (set at mount from the book's fit), NOT the current page, so pan and
+   *  magnifier geometry stay stable across page turns. */
+  private readonly renderedPageSize = computed(() => this.flip.bookPageSize());
   /** Rendered page size at the current wheel-zoom scale (bookstore.zoom). */
   private readonly effectivePageSize = computed<{ width: number; height: number } | null>(() => {
     const base = this.renderedPageSize();
